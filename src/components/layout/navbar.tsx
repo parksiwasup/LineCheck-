@@ -177,7 +177,7 @@ export function Navbar() {
 
   // Shared Theme & Background Controls
   const themeControls = (
-    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
       {/* Quick Day / Night Pill Switcher */}
       <div className="inline-flex items-center rounded-xl border border-border bg-muted/60 p-0.5 whitespace-nowrap">
         <button
@@ -185,7 +185,7 @@ export function Navbar() {
           onClick={() => setTheme("light")}
           title="โหมดกลางวัน (Day Mode)"
           className={cn(
-            "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+            "inline-flex items-center justify-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
             mounted && resolvedTheme === "light"
               ? "bg-card text-amber-600 shadow-xs"
               : "text-muted-foreground hover:text-foreground"
@@ -199,7 +199,7 @@ export function Navbar() {
           onClick={() => setTheme("dark")}
           title="โหมดกลางคืน (Night Mode)"
           className={cn(
-            "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+            "inline-flex items-center justify-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
             mounted && resolvedTheme === "dark"
               ? "bg-card text-sky-400 shadow-xs"
               : "text-muted-foreground hover:text-foreground"
@@ -214,7 +214,7 @@ export function Navbar() {
       <Popover>
         <PopoverTrigger
           title="ตั้งค่าโหมดพื้นหลัง กลางวัน/กลางคืน และโทนสี"
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 sm:px-3 text-xs font-semibold text-foreground shadow-xs hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
+          className="inline-flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-2 sm:px-3 text-xs font-semibold text-foreground shadow-xs hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
         >
           <span
             className={cn(
@@ -223,7 +223,7 @@ export function Navbar() {
               activeColorMeta.ring
             )}
           />
-          <Palette className="h-3.5 w-3.5 text-primary shrink-0" />
+          <Palette className="h-3.5 w-3.5 text-primary shrink-0 hidden sm:inline" />
           <span className="hidden xl:inline">สีพื้นหลัง</span>
         </PopoverTrigger>
 
@@ -410,20 +410,20 @@ export function Navbar() {
       <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/85 backdrop-blur-md pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:px-6 lg:px-8">
           {/* Left: Brand + Front-Office Nav */}
-          <div className="flex items-center gap-4 lg:gap-6 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 min-w-0 flex-1 sm:flex-initial">
             <Link
               href="/dashboard"
-              className="flex items-center gap-2.5 group shrink-0"
+              className="flex items-center gap-2 sm:gap-2.5 group shrink-0 min-w-0"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-105">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-105 shrink-0">
                 <GraduationCap className="h-5 w-5" />
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base font-bold tracking-tight text-foreground whitespace-nowrap">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 sm:gap-1.5">
+                  <span className="text-sm sm:text-base font-bold tracking-tight text-foreground whitespace-nowrap">
                     LineCheck<span className="text-primary">+</span>
                   </span>
-                  <span className="rounded-md bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
+                  <span className="hidden xs:inline-block rounded-md bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                     หน้าบ้าน
                   </span>
                 </div>
@@ -434,7 +434,7 @@ export function Navbar() {
             </Link>
 
             {/* Front-Office Navigation (Strictly 3 operational items, single-line) */}
-            <nav className="hidden md:flex items-center gap-1 rounded-2xl border border-border/60 bg-muted/40 p-1">
+            <nav className="hidden md:flex items-center gap-1 rounded-2xl border border-border/60 bg-muted/40 p-1 shrink-0">
               {frontOfficeNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive =
@@ -445,7 +445,7 @@ export function Navbar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-sm font-semibold transition-all whitespace-nowrap",
+                      "flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold transition-all whitespace-nowrap",
                       isActive
                         ? "bg-primary text-primary-foreground shadow-xs"
                         : "text-muted-foreground hover:bg-card hover:text-foreground"
@@ -460,12 +460,12 @@ export function Navbar() {
           </div>
 
           {/* Right: Zone / Role Switcher + Theme Controls */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <Popover>
               <PopoverTrigger
                 title="คลิกเพื่อสลับสิทธิ์ หรือเข้าสู่ระบบจัดการหลังบ้าน (Backoffice)"
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap",
+                  "inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border px-2 sm:px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap",
                   activeRole === "ADMIN"
                     ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
                     : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15"
@@ -474,12 +474,14 @@ export function Navbar() {
                 {activeRole === "ADMIN" ? (
                   <>
                     <Shield className="h-3.5 w-3.5 shrink-0" />
-                    <span>ADMIN (ฝ่ายปกครอง)</span>
+                    <span className="hidden sm:inline">ADMIN (ฝ่ายปกครอง)</span>
+                    <span className="sm:hidden">ADMIN</span>
                   </>
                 ) : (
                   <>
                     <UserCheck className="h-3.5 w-3.5 shrink-0" />
-                    <span>TEACHER (ครูที่ปรึกษา)</span>
+                    <span className="hidden sm:inline">TEACHER (ครูที่ปรึกษา)</span>
+                    <span className="sm:hidden">ครู</span>
                   </>
                 )}
                 <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />

@@ -49,7 +49,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <Navbar />
-          <main className="flex-1 mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8 pb-24 md:pb-8">
+          <main className="flex-1 mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8 pb-32 sm:pb-24 md:pb-8">
             {children}
           </main>
           <footer className="hidden md:block border-t border-border/60 bg-card/50 py-4 text-center text-xs text-muted-foreground">

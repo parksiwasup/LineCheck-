@@ -260,23 +260,23 @@ export function DailyCheckClient({
   return (
     <div className="space-y-6">
       {/* Header & Top Action Bar */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
               เช็คชื่อเข้าแถวประจำวัน
             </h1>
-            <Badge variant="info" className="text-xs">
+            <Badge variant="info" className="text-xs shrink-0">
               Daily Attendance Check
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             เลือกห้องเรียนและวันที่เพื่อเช็คชื่อกิจกรรมหน้าเสาธง พร้อมระบบบันทึกแบบ Optimistic UI
           </p>
         </div>
 
         {/* Quick Actions: Mark All Present & Save */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="hidden sm:flex flex-wrap items-center gap-2.5">
           <Button
             type="button"
             variant="outline"
@@ -621,7 +621,7 @@ export function DailyCheckClient({
       </Card>
 
       {/* Sticky Mobile Floating Action Bar for One-Thumb Saving on Phones */}
-      <div className="fixed bottom-[60px] inset-x-0 z-30 flex sm:hidden items-center justify-between gap-2 border-t border-border/80 bg-card/95 backdrop-blur-md px-3 py-2 shadow-lg">
+      <div className="fixed bottom-[60px] inset-x-0 z-30 flex sm:hidden items-center justify-between gap-2 border-t border-border/80 bg-card/95 backdrop-blur-md px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-lg">
         <Button
           type="button"
           variant="outline"

@@ -426,17 +426,17 @@ export function RemedialManagementClient({
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight">
-              ระบบจัดการแก้กิจกรรมเข้าแถว (Remedial & Deficit Report)
+      <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+              ระบบจัดการแก้กิจกรรมเข้าแถว
             </h1>
-            <Badge variant="destructive" className="text-xs">
+            <Badge variant="destructive" className="text-xs shrink-0">
               เกณฑ์ขั้นต่ำ 80%
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             รายชื่อนักเรียนที่มีเวลาเข้าแถวต่ำกว่าเกณฑ์ 80% พร้อมระบบส่งงานจิตอาสาและอนุมัติชดเชยวันขาดแถวอัตโนมัติ
           </p>
         </div>
@@ -448,7 +448,7 @@ export function RemedialManagementClient({
                 selectedStudent ?? initialReport.deficitStudents[0]
               )
             }
-            className="shadow-md"
+            className="w-full sm:w-auto shadow-md shrink-0"
           >
             <FilePlus2 className="h-4 w-4" />
             <span>บันทึกกิจกรรมแก้แถวใหม่</span>
@@ -457,79 +457,79 @@ export function RemedialManagementClient({
       </div>
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
         <Card>
-          <CardContent className="p-5 flex items-center justify-between">
+          <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">
+              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
                 นักเรียนต่ำกว่าเกณฑ์ (&lt; 80%)
               </p>
-              <p className="text-2xl font-bold mt-1">
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1">
                 {initialReport.stats.totalBelowStandardRaw} คน
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
                 จากประวัติการเช็คชื่อทั้งหมด
               </p>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
-              <AlertTriangle className="h-6 w-6" />
+            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
+              <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-5 flex items-center justify-between">
+          <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">
+              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
                 ยังต้องแก้แถวเพิ่ม
               </p>
-              <p className="text-2xl font-bold mt-1 text-rose-600 dark:text-rose-400">
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-rose-600 dark:text-rose-400">
                 {initialReport.stats.stillDeficitCount} คน
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
                 เวลาเรียนสุทธิยังไม่ถึง 80%
               </p>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <CalendarDays className="h-6 w-6" />
+            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+              <CalendarDays className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-5 flex items-center justify-between">
+          <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">
-                รอการตรวจสอบ/อนุมัติ (Pending)
+              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                รออนุมัติ (Pending)
               </p>
-              <p className="text-2xl font-bold mt-1 text-amber-600 dark:text-amber-400">
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-amber-600 dark:text-amber-400">
                 {initialReport.stats.pendingApprovalCount} รายการ
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                พร้อมให้ครู/ฝ่ายปกครองอนุมัติ
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                พร้อมให้ครู/ฝ่ายปกครองตรวจ
               </p>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
-              <Clock className="h-6 w-6" />
+            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0">
+              <Clock className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-5 flex items-center justify-between">
+          <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">
+              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
                 แก้แถวผ่านเกณฑ์สำเร็จ
               </p>
-              <p className="text-2xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-emerald-600 dark:text-emerald-400">
                 {initialReport.stats.remediedSuccessCount} คน
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                ชดเชยเวลาเรียนครบ ≥ 80% แล้ว
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                ชดเชยเวลาเรียนครบ ≥ 80%
               </p>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <Sparkles className="h-6 w-6" />
+            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+              <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
