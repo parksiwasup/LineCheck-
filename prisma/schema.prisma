@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  TEACHER
+  ADMIN
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  LEAVE
+  EXEMPTION
+}
+
+enum RemedialStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                  String             @id @default(cuid())
+  name                String
+  email               String             @unique
+  password            String?
+  image               String?
+  role                Role               @default(TEACHER)
+  recordedAttendances AttendanceRecord[] @relation("RecordedBy")
+  approvedRemedials   RemedialRecord[]   @relation("ApprovedBy")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model Student {
+  id                String             @id @default(cuid())
+  studentId         String             @unique
+  title             String
+  firstName         String
+  lastName          String
+  classroom         String
+  status            StudentStatus      @default(ACTIVE)
+  attendanceRecords AttendanceRecord[]
+  remedialRecords   RemedialRecord[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([classroom])
+  @@index([status])
+}
+
+model AttendanceRecord {
+  id           String           @id @default(cuid())
+  studentId    String
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date         DateTime         @db.Date
+  status       AttendanceStatus @default(PRESENT)
+  recordedById String?
+  recordedBy   User?            @relation("RecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  remark       String?          @db.Text
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([studentId, date])
+  @@index([date])
+}
+
+model RemedialRecord {
+  id            String         @id @default(cuid())
+  studentId     String
+  student       Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  targetDate    DateTime       @db.Date
+  activityTitle String
+  description   String?        @db.Text
+  hoursEarned   Float          @default(1)
+  proofUrl      String?
+  status        RemedialStatus @default(PENDING)
+  approvedById  String?
+  approvedBy    User?          @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([studentId, status])
+  @@index([targetDate])
+}
