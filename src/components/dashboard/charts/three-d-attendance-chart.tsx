@@ -244,41 +244,7 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
             currentY = yTop;
           }
 
-          // 2. สาย (Late)
-          if (item.late > 0) {
-            const h = (item.late / totalStudents) * maxBarHeight;
-            const yTop = currentY - h;
-            segments.push({
-              id: "late",
-              count: item.late,
-              frontFill: "url(#late-front)",
-              sideFill: "url(#late-side)",
-              topFill: "url(#late-top)",
-              yBottom: currentY,
-              yTop,
-              height: h,
-            });
-            currentY = yTop;
-          }
-
-          // 3. ลา (Leave)
-          if (item.leave > 0) {
-            const h = (item.leave / totalStudents) * maxBarHeight;
-            const yTop = currentY - h;
-            segments.push({
-              id: "leave",
-              count: item.leave,
-              frontFill: "url(#leave-front)",
-              sideFill: "url(#leave-side)",
-              topFill: "url(#leave-top)",
-              yBottom: currentY,
-              yTop,
-              height: h,
-            });
-            currentY = yTop;
-          }
-
-          // 4. ขาด (Absent)
+          // 2. ขาด (Absent)
           if (item.absent > 0) {
             const h = (item.absent / totalStudents) * maxBarHeight;
             const yTop = currentY - h;
@@ -464,16 +430,6 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
                 <span>มา:</span>
                 <span className="font-bold">{data[hoveredIndex].present} คน</span>
               </div>
-              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                <span className="h-2 w-2 rounded-full bg-amber-500 shadow-xs" />
-                <span>สาย:</span>
-                <span className="font-bold">{data[hoveredIndex].late} คน</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400">
-                <span className="h-2 w-2 rounded-full bg-sky-500 shadow-xs" />
-                <span>ลา:</span>
-                <span className="font-bold">{data[hoveredIndex].leave} คน</span>
-              </div>
               <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
                 <span className="h-2 w-2 rounded-full bg-rose-500 shadow-xs" />
                 <span>ขาด:</span>
@@ -485,22 +441,14 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
       </AnimatePresence>
 
       {/* 3D Legend Bar */}
-      <div className="mt-3 flex flex-wrap items-center justify-center gap-3 sm:gap-6 border-t border-border/50 pt-3 text-xs">
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-4 sm:gap-8 border-t border-border/50 pt-3 text-xs">
         <div className="flex items-center gap-2">
           <div className="h-3 w-5 rounded-sm bg-gradient-to-r from-emerald-400 to-emerald-600 shadow-2xs border border-emerald-300" />
-          <span className="font-medium">มา (คน)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-5 rounded-sm bg-gradient-to-r from-amber-400 to-amber-600 shadow-2xs border border-amber-300" />
-          <span className="font-medium">สาย (คน)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-5 rounded-sm bg-gradient-to-r from-sky-400 to-sky-600 shadow-2xs border border-sky-300" />
-          <span className="font-medium">ลา (คน)</span>
+          <span className="font-medium">มาเข้าแถว (คน)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="h-3 w-5 rounded-sm bg-gradient-to-r from-rose-400 to-rose-600 shadow-2xs border border-rose-300" />
-          <span className="font-medium">ขาด (คน)</span>
+          <span className="font-medium">ขาดแถว (คน)</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="flex items-center justify-center h-3 w-5">

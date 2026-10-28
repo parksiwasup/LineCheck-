@@ -39,6 +39,8 @@ import { Calendar } from "@/components/ui/calendar";
 
 interface DailyCheckClientProps {
   initialClassrooms: string[];
+  assignedClassrooms?: string | null;
+  userRole?: string;
   initialData: {
     dateIso: string;
     classroom: string;
@@ -67,37 +69,23 @@ const STATUS_OPTIONS: {
     label: "มา",
     shortLabel: "มา",
     activeClass:
-      "bg-emerald-600 text-white border-emerald-600 shadow-xs dark:bg-emerald-500 dark:border-emerald-500",
+      "bg-emerald-600 text-white border-emerald-600 shadow-sm dark:bg-emerald-500 dark:border-emerald-500",
     dotClass: "bg-emerald-500",
-  },
-  {
-    value: "LATE",
-    label: "สาย",
-    shortLabel: "สาย",
-    activeClass:
-      "bg-amber-500 text-white border-amber-500 shadow-xs dark:bg-amber-500 dark:border-amber-500",
-    dotClass: "bg-amber-500",
   },
   {
     value: "ABSENT",
     label: "ขาด",
     shortLabel: "ขาด",
     activeClass:
-      "bg-rose-600 text-white border-rose-600 shadow-xs dark:bg-rose-500 dark:border-rose-500",
+      "bg-rose-600 text-white border-rose-600 shadow-sm dark:bg-rose-500 dark:border-rose-500",
     dotClass: "bg-rose-500",
-  },
-  {
-    value: "LEAVE",
-    label: "ลา",
-    shortLabel: "ลา",
-    activeClass:
-      "bg-sky-600 text-white border-sky-600 shadow-xs dark:bg-sky-500 dark:border-sky-500",
-    dotClass: "bg-sky-500",
   },
 ];
 
 export function DailyCheckClient({
   initialClassrooms,
+  assignedClassrooms,
+  userRole = "TEACHER",
   initialData,
 }: DailyCheckClientProps) {
   const {
@@ -316,30 +304,49 @@ export function DailyCheckClient({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-end">
             {/* Classroom Selector (Zustand State) */}
             <div className="md:col-span-4 space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                ห้องเรียน (Classroom)
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  ห้องเรียน (Classroom)
+                </label>
+                {userRole === "TEACHER" && assignedClassrooms && (
+                  <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                    ห้องที่คุณดูแล: {assignedClassrooms}
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5">
-                {initialClassrooms.map((room) => (
-                  <button
-                    key={room}
-                    type="button"
-                    onClick={() => setSelectedClassroom(room)}
-                    className={cn(
-                      "rounded-xl px-3.5 py-2 text-sm font-semibold transition-all cursor-pointer border",
-                      selectedClassroom === room
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card text-foreground border-border hover:bg-accent"
-                    )}
-                  >
-                    {room}
-                  </button>
-                ))}
+                {initialClassrooms.map((room) => {
+                  const isAssigned =
+                    userRole === "ADMIN" ||
+                    !assignedClassrooms ||
+                    assignedClassrooms.split(",").map((c) => c.trim()).includes(room);
+
+                  return (
+                    <button
+                      key={room}
+                      type="button"
+                      onClick={() => setSelectedClassroom(room)}
+                      className={cn(
+                        "rounded-xl px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border flex items-center gap-1.5",
+                        selectedClassroom === room
+                          ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                          : isAssigned
+                          ? "bg-card text-foreground border-emerald-500/40 hover:bg-emerald-500/10"
+                          : "bg-muted/40 text-muted-foreground border-border hover:bg-accent"
+                      )}
+                    >
+                      {isAssigned && userRole === "TEACHER" && assignedClassrooms && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      )}
+                      <span>{room}</span>
+                    </button>
+                  );
+                })}
                 <button
                   type="button"
                   onClick={() => setSelectedClassroom("ALL")}
                   className={cn(
-                    "rounded-xl px-3.5 py-2 text-sm font-semibold transition-all cursor-pointer border",
+                    "rounded-xl px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border",
                     selectedClassroom === "ALL"
                       ? "bg-primary text-primary-foreground border-primary shadow-xs"
                       : "bg-card text-foreground border-border hover:bg-accent"
@@ -432,23 +439,7 @@ export function DailyCheckClient({
                 )}
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>มาเรียน ({counts.present})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setStatusFilter(statusFilter === "LATE" ? "ALL" : "LATE")
-                }
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all cursor-pointer border",
-                  statusFilter === "LATE"
-                    ? "bg-amber-500 text-white border-amber-500"
-                    : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
-                )}
-              >
-                <Clock className="h-3.5 w-3.5" />
-                <span>มาสาย ({counts.late})</span>
+                <span>มาเข้าแถว ({counts.present})</span>
               </button>
 
               <button
@@ -465,22 +456,6 @@ export function DailyCheckClient({
               >
                 <XCircle className="h-3.5 w-3.5" />
                 <span>ขาดแถว ({counts.absent})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setStatusFilter(statusFilter === "LEAVE" ? "ALL" : "LEAVE")
-                }
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all cursor-pointer border",
-                  statusFilter === "LEAVE"
-                    ? "bg-sky-600 text-white border-sky-600"
-                    : "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20"
-                )}
-              >
-                <FileText className="h-3.5 w-3.5" />
-                <span>ลา ({counts.leave})</span>
               </button>
             </div>
 
@@ -512,7 +487,7 @@ export function DailyCheckClient({
             <div className="col-span-4">ชื่อ - นามสกุล</div>
             <div className="col-span-1">ห้อง</div>
             <div className="col-span-4 text-center">
-              สถานะการเข้าแถว [มา] [สาย] [ขาด] [ลา]
+              สถานะการเข้าแถว [มา] [ขาด]
             </div>
             <div className="col-span-2">หมายเหตุ</div>
           </div>
@@ -543,8 +518,6 @@ export function DailyCheckClient({
                       "flex flex-col gap-2.5 p-3.5 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:px-6 sm:py-3.5 transition-colors",
                       student.status === "ABSENT"
                         ? "bg-rose-500/[0.04] hover:bg-rose-500/[0.08]"
-                        : student.status === "LATE"
-                        ? "bg-amber-500/[0.04] hover:bg-amber-500/[0.08]"
                         : "hover:bg-muted/30"
                     )}
                   >
@@ -569,12 +542,12 @@ export function DailyCheckClient({
                       </div>
                     </div>
 
-                    {/* Quick Status Toggle Switches / Radios: [มา] [สาย] [ขาด] [ลา] */}
+                    {/* Quick Status Toggle Switches / Radios: [มา] [ขาด] */}
                     <div className="sm:col-span-4 flex items-center justify-center">
                       <div
                         role="radiogroup"
                         aria-label={`สถานะของ ${student.fullName}`}
-                        className="grid grid-cols-4 gap-1.5 sm:gap-1 rounded-xl bg-muted/70 p-1 w-full sm:max-w-[270px]"
+                        className="grid grid-cols-2 gap-1.5 sm:gap-2 rounded-2xl bg-muted/80 p-1 w-full sm:max-w-[200px] border border-border/60"
                       >
                         {STATUS_OPTIONS.map((opt) => {
                           const isSelected = student.status === opt.value;
@@ -588,10 +561,10 @@ export function DailyCheckClient({
                                 handleStatusChange(student.id, opt.value)
                               }
                               className={cn(
-                                "rounded-lg py-2 sm:py-1.5 px-2 text-xs font-semibold transition-all cursor-pointer border touch-manipulation",
+                                "rounded-xl py-2 sm:py-1.5 px-3 text-xs sm:text-sm font-bold transition-all cursor-pointer border touch-manipulation text-center",
                                 isSelected
                                   ? opt.activeClass
-                                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-card/60"
+                                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-card/70"
                               )}
                             >
                               {opt.label}

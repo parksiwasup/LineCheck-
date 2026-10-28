@@ -11,10 +11,16 @@ const rl = readline.createInterface({
 const ask = (query) => new Promise((resolve) => rl.question(query, resolve));
 
 function resolveGitBinary() {
-  const ghDesktopGit =
-    "C:\\Users\\User\\AppData\\Local\\GitHubDesktop\\app-3.6.7\\resources\\app\\git\\cmd\\git.exe";
-  if (fs.existsSync(ghDesktopGit)) {
-    return `"${ghDesktopGit}"`;
+  const possiblePaths = [
+    "C:\\Users\\Parksiwasup\\AppData\\Local\\github-copilot-git-2.53.0-4\\cmd\\git.exe",
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Git", "cmd", "git.exe"),
+    "C:\\Program Files\\Git\\cmd\\git.exe",
+    "C:\\Program Files\\Git\\bin\\git.exe",
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return `"${p}"`;
+    }
   }
   return "git";
 }

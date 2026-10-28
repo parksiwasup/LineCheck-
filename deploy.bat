@@ -32,6 +32,16 @@ if not exist "%~dp0.env" (
     )
 )
 
+:: 3.1 Check MySQL
+netstat -ano | findstr :3306 >nul
+if %errorlevel% neq 0 (
+    if exist "C:\MAMP\bin\mysql\bin\mysqld.exe" (
+        echo [INFO] กำลังเริ่มทำงาน MySQL Server (MAMP)...
+        start "" /b "C:\MAMP\bin\mysql\bin\mysqld.exe" --defaults-file="C:\Users\Public\Documents\Appsolute\MAMPPRO\conf\my.ini"
+        timeout /t 3 /nobreak >nul
+    )
+)
+
 echo [1/4] Checking and installing dependencies...
 call npm.cmd install --legacy-peer-deps
 if %errorlevel% neq 0 (

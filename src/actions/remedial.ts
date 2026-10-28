@@ -23,6 +23,13 @@ const reviewRemedialSchema = z.object({
   note: z.string().optional(),
 });
 
+export interface WeeklyDayStatus {
+  dayLabel: "จ" | "อ" | "พ" | "พฤ" | "ศ";
+  dayName: string;
+  dateIso: string;
+  status: "PRESENT" | "ABSENT" | "UNRECORDED";
+}
+
 export interface AbsenceDateOption {
   dateIso: string;
   remark: string | null;
@@ -67,7 +74,14 @@ export interface StudentDeficitReportItem {
   effectivePresentDays: number;
   effectiveAttendancePercent: number;
   remainingDeficitDays: number;
-  remedialOverallStatus: "COMPLIANT" | "REMEDIED" | "IN_PROGRESS" | "CRITICAL_DEFICIT";
+  targetSemesterDays: number;
+  isCompletedSemester: boolean;
+  thisWeekDays: WeeklyDayStatus[];
+  thisWeekPresentDays: number;
+  thisWeekAbsentDays: number;
+  thisWeekStatus: "PASSED" | "IN_PROGRESS" | "FAILED";
+  weeklyDeficitWeeksCount: number;
+  remedialOverallStatus: "COMPLIANT" | "REMEDIED" | "IN_PROGRESS" | "WEEKLY_DEFICIT" | "CRITICAL_DEFICIT";
   absenceDates: AbsenceDateOption[];
   remedialRecords: RemedialLogItem[];
 }
@@ -78,12 +92,48 @@ export async function getDeficitReportAction(options?: {
   deficitStudents: StudentDeficitReportItem[];
   allRemedialLogs: RemedialLogItem[];
   stats: {
+    targetSemesterDays: number;
+    totalStudents: number;
+    completed45Count: number;
+    incompleted45Count: number;
+    weeklyPassedCount: number;
+    weeklyFailedCount: number;
+    weeklyInProgressCount: number;
+    pendingApprovalCount: number;
+    remediedSuccessCount: number;
     totalBelowStandardRaw: number;
     stillDeficitCount: number;
-    remediedSuccessCount: number;
-    pendingApprovalCount: number;
   };
 }> {
+  const latestRecord = await prisma.attendanceRecord.findFirst({
+    orderBy: { date: "desc" },
+    select: { date: true },
+  });
+  const anchorDate = latestRecord?.date ? new Date(latestRecord.date) : new Date();
+
+  const getMondayOfWeek = (d: Date): Date => {
+    const date = new Date(d);
+    const day = date.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    date.setUTCDate(date.getUTCDate() + diff);
+    date.setUTCHours(0, 0, 0, 0);
+    return date;
+  };
+
+  const monday = getMondayOfWeek(anchorDate);
+  const dayLabels: Array<"จ" | "อ" | "พ" | "พฤ" | "ศ"> = ["จ", "อ", "พ", "พฤ", "ศ"];
+  const dayNames = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
+  const currentWeekDaysInfo = dayLabels.map((lbl, idx) => {
+    const d = new Date(monday);
+    d.setUTCDate(monday.getUTCDate() + idx);
+    return {
+      date: d,
+      dateIso: formatDateISO(d),
+      label: lbl,
+      name: dayNames[idx],
+    };
+  });
+
   const students = await prisma.student.findMany({
     where: { status: StudentStatus.ACTIVE },
     include: {
@@ -100,11 +150,74 @@ export async function getDeficitReportAction(options?: {
 
   const allRemedialLogs: RemedialLogItem[] = [];
   const reportItems: StudentDeficitReportItem[] = [];
+  const TARGET_SEMESTER_DAYS = 45;
 
   for (const s of students) {
+    const recordMap = new Map<string, AttendanceStatus>();
+    for (const r of s.attendanceRecords) {
+      recordMap.set(formatDateISO(r.date), r.status);
+    }
+
+    // Weekly criterion: Monday-Friday must attend >= 3 days
+    let thisWeekPresentDays = 0;
+    let thisWeekAbsentDays = 0;
+    let thisWeekUnrecordedDays = 0;
+
+    const thisWeekDays: WeeklyDayStatus[] = currentWeekDaysInfo.map((w) => {
+      const rec = recordMap.get(w.dateIso);
+      let status: "PRESENT" | "ABSENT" | "UNRECORDED" = "UNRECORDED";
+      if (rec !== undefined) {
+        if (rec === AttendanceStatus.ABSENT) {
+          status = "ABSENT";
+          thisWeekAbsentDays++;
+        } else {
+          status = "PRESENT";
+          thisWeekPresentDays++;
+        }
+      } else {
+        thisWeekUnrecordedDays++;
+      }
+      return {
+        dayLabel: w.label,
+        dayName: w.name,
+        dateIso: w.dateIso,
+        status,
+      };
+    });
+
+    let thisWeekStatus: "PASSED" | "IN_PROGRESS" | "FAILED" = "IN_PROGRESS";
+    if (thisWeekPresentDays >= 3) {
+      thisWeekStatus = "PASSED";
+    } else if (thisWeekAbsentDays > 2 || (thisWeekUnrecordedDays === 0 && thisWeekPresentDays < 3)) {
+      thisWeekStatus = "FAILED";
+    } else {
+      thisWeekStatus = "IN_PROGRESS";
+    }
+
+    // Historical weeks tracking
+    const weekHistoryMap = new Map<string, number>();
+    for (const r of s.attendanceRecords) {
+      if (r.status !== AttendanceStatus.ABSENT) {
+        const rMonIso = formatDateISO(getMondayOfWeek(r.date));
+        if (rMonIso !== formatDateISO(monday)) {
+          weekHistoryMap.set(rMonIso, (weekHistoryMap.get(rMonIso) ?? 0) + 1);
+        }
+      }
+    }
+    let weeklyDeficitWeeksCount = 0;
+    for (const [, presentCount] of weekHistoryMap.entries()) {
+      if (presentCount < 3) {
+        weeklyDeficitWeeksCount++;
+      }
+    }
+    if (thisWeekStatus === "FAILED") {
+      weeklyDeficitWeeksCount++;
+    }
+
+    // Semester 45 times criterion
     const totalDays = s.attendanceRecords.length;
-    const presentOnly = s.attendanceRecords.filter(
-      (r) => r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.EXEMPTION
+    const baseAttendedDays = s.attendanceRecords.filter(
+      (r) => r.status !== AttendanceStatus.ABSENT
     ).length;
     const lateDays = s.attendanceRecords.filter(
       (r) => r.status === AttendanceStatus.LATE
@@ -115,11 +228,6 @@ export async function getDeficitReportAction(options?: {
     const leaveDays = s.attendanceRecords.filter(
       (r) => r.status === AttendanceStatus.LEAVE
     ).length;
-
-    // Coming present or late counts as attending morning assembly, while ABSENT and excessive LEAVE reduce compliance
-    const baseAttendedDays = presentOnly + lateDays;
-    const rawAttendancePercent =
-      totalDays > 0 ? Math.round((baseAttendedDays / totalDays) * 1000) / 10 : 100;
 
     const approvedRemedials = s.remedialRecords.filter(
       (rem) => rem.status === RemedialStatus.APPROVED
@@ -135,28 +243,28 @@ export async function getDeficitReportAction(options?: {
     const pendingRemedialCount = pendingRemedials.length;
     const rejectedRemedialCount = rejectedRemedials.length;
 
-    const effectivePresentDays = Math.min(
-      totalDays,
-      baseAttendedDays + approvedRemedialCount
-    );
+    const effectivePresentDays = baseAttendedDays + approvedRemedialCount;
+    const isCompletedSemester = effectivePresentDays >= TARGET_SEMESTER_DAYS;
+    const remainingDeficitDays = Math.max(0, TARGET_SEMESTER_DAYS - effectivePresentDays);
+
+    const rawAttendancePercent =
+      TARGET_SEMESTER_DAYS > 0
+        ? Math.round((baseAttendedDays / TARGET_SEMESTER_DAYS) * 1000) / 10
+        : 100;
     const effectiveAttendancePercent =
-      totalDays > 0
-        ? Math.round((effectivePresentDays / totalDays) * 1000) / 10
+      TARGET_SEMESTER_DAYS > 0
+        ? Math.min(100, Math.round((effectivePresentDays / TARGET_SEMESTER_DAYS) * 1000) / 10)
         : 100;
 
-    const requiredDaysFor80 = Math.ceil(totalDays * 0.8);
-    const remainingDeficitDays = Math.max(0, requiredDaysFor80 - effectivePresentDays);
-
-    let remedialOverallStatus: StudentDeficitReportItem["remedialOverallStatus"] =
-      "COMPLIANT";
-    if (rawAttendancePercent < 80) {
-      if (effectiveAttendancePercent >= 80) {
-        remedialOverallStatus = "REMEDIED";
-      } else if (pendingRemedialCount > 0 || approvedRemedialCount > 0) {
-        remedialOverallStatus = "IN_PROGRESS";
-      } else {
-        remedialOverallStatus = "CRITICAL_DEFICIT";
-      }
+    let remedialOverallStatus: StudentDeficitReportItem["remedialOverallStatus"] = "COMPLIANT";
+    if (isCompletedSemester && thisWeekStatus !== "FAILED") {
+      remedialOverallStatus = approvedRemedialCount > 0 ? "REMEDIED" : "COMPLIANT";
+    } else if (pendingRemedialCount > 0) {
+      remedialOverallStatus = "IN_PROGRESS";
+    } else if (thisWeekStatus === "FAILED") {
+      remedialOverallStatus = "WEEKLY_DEFICIT";
+    } else {
+      remedialOverallStatus = "CRITICAL_DEFICIT";
     }
 
     const fullName = `${s.title}${s.firstName} ${s.lastName}`;
@@ -198,8 +306,9 @@ export async function getDeficitReportAction(options?: {
       });
 
     if (
-      options?.includeAllStudents ||
-      rawAttendancePercent < 80 ||
+      options?.includeAllStudents !== false ||
+      !isCompletedSemester ||
+      thisWeekStatus === "FAILED" ||
       s.remedialRecords.length > 0
     ) {
       reportItems.push({
@@ -222,6 +331,13 @@ export async function getDeficitReportAction(options?: {
         effectivePresentDays,
         effectiveAttendancePercent,
         remainingDeficitDays,
+        targetSemesterDays: TARGET_SEMESTER_DAYS,
+        isCompletedSemester,
+        thisWeekDays,
+        thisWeekPresentDays,
+        thisWeekAbsentDays,
+        thisWeekStatus,
+        weeklyDeficitWeeksCount,
         remedialOverallStatus,
         absenceDates,
         remedialRecords: studentRemedialLogs,
@@ -234,12 +350,17 @@ export async function getDeficitReportAction(options?: {
   );
 
   const stats = {
-    totalBelowStandardRaw: reportItems.filter((i) => i.rawAttendancePercent < 80).length,
-    stillDeficitCount: reportItems.filter((i) => i.effectiveAttendancePercent < 80).length,
-    remediedSuccessCount: reportItems.filter((i) => i.remedialOverallStatus === "REMEDIED")
-      .length,
-    pendingApprovalCount: allRemedialLogs.filter((l) => l.status === RemedialStatus.PENDING)
-      .length,
+    targetSemesterDays: TARGET_SEMESTER_DAYS,
+    totalStudents: reportItems.length,
+    completed45Count: reportItems.filter((i) => i.isCompletedSemester).length,
+    incompleted45Count: reportItems.filter((i) => !i.isCompletedSemester).length,
+    weeklyPassedCount: reportItems.filter((i) => i.thisWeekStatus === "PASSED").length,
+    weeklyFailedCount: reportItems.filter((i) => i.thisWeekStatus === "FAILED").length,
+    weeklyInProgressCount: reportItems.filter((i) => i.thisWeekStatus === "IN_PROGRESS").length,
+    pendingApprovalCount: allRemedialLogs.filter((l) => l.status === RemedialStatus.PENDING).length,
+    remediedSuccessCount: reportItems.filter((i) => i.approvedRemedialCount > 0).length,
+    totalBelowStandardRaw: reportItems.filter((i) => !i.isCompletedSemester || i.thisWeekStatus === "FAILED").length,
+    stillDeficitCount: reportItems.filter((i) => !i.isCompletedSemester).length,
   };
 
   return {
@@ -274,9 +395,32 @@ export async function submitRemedialTaskAction(
   } = parsed.data;
 
   const targetUtcDate = toUTCDateOnly(targetDate);
-  const operator = await getActiveOperator(autoApprove ? "ADMIN" : "TEACHER");
+  const operator = await getActiveOperator();
 
   try {
+    // Check teacher permission for student's classroom
+    const targetStudent = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { id: true, classroom: true },
+    });
+
+    if (!targetStudent) {
+      return {
+        success: false,
+        message: "ไม่พบข้อมูลนักเรียนที่ระบุ",
+      };
+    }
+
+    if (operator?.role === "TEACHER" && operator.classrooms) {
+      const allowedRooms = operator.classrooms.split(",").map((c) => c.trim());
+      if (allowedRooms.length > 0 && !allowedRooms.includes(targetStudent.classroom)) {
+        return {
+          success: false,
+          message: `คุณไม่มีสิทธิ์จัดการข้อมูลนักเรียนห้อง ${targetStudent.classroom} (คุณดูแลห้อง: ${operator.classrooms})`,
+        };
+      }
+    }
+
     // Check if there is already a non-rejected remedial record for this student and date
     const existing = await prisma.remedialRecord.findFirst({
       where: {
@@ -341,11 +485,23 @@ export async function reviewRemedialTaskAction(
   }
 
   const { remedialId, status, note } = parsed.data;
-  const adminOperator = await getActiveOperator("ADMIN");
+  const operator = await getActiveOperator();
+
+  if (!operator) {
+    return {
+      success: false,
+      message: "กรุณาเข้าสู่ระบบก่อนทำการอนุมัติกิจกรรมแก้แถว",
+    };
+  }
 
   try {
     const existing = await prisma.remedialRecord.findUnique({
       where: { id: remedialId },
+      include: {
+        student: {
+          select: { classroom: true, studentId: true },
+        },
+      },
     });
 
     if (!existing) {
@@ -353,6 +509,19 @@ export async function reviewRemedialTaskAction(
         success: false,
         message: "ไม่พบรายการแก้แถวที่ระบุ",
       };
+    }
+
+    // Role & classroom permission check:
+    // Homeroom teacher can approve their assigned classrooms (e.g. "ม.4/1,ม.4/2")
+    // Admin can approve all classrooms
+    if (operator.role === "TEACHER" && operator.classrooms) {
+      const allowedRooms = operator.classrooms.split(",").map((c) => c.trim());
+      if (allowedRooms.length > 0 && !allowedRooms.includes(existing.student.classroom)) {
+        return {
+          success: false,
+          message: `คุณไม่มีสิทธิ์อนุมัติรายการของห้อง ${existing.student.classroom} (คุณดูแลห้อง: ${operator.classrooms})`,
+        };
+      }
     }
 
     const updatedDescription = note?.trim()
@@ -363,7 +532,7 @@ export async function reviewRemedialTaskAction(
       where: { id: remedialId },
       data: {
         status: status as RemedialStatus,
-        approvedById: adminOperator?.id ?? null,
+        approvedById: operator.id,
         description: updatedDescription,
       },
     });
@@ -389,13 +558,13 @@ export async function reviewRemedialTaskAction(
         r.status === AttendanceStatus.EXEMPTION
     ).length;
 
-    const effectivePresentDays = Math.min(totalDays, baseAttendedDays + approvedCount);
-    const updatedAttendancePercent =
-      totalDays > 0
-        ? Math.round((effectivePresentDays / totalDays) * 1000) / 10
-        : 100;
-    const requiredDaysFor80 = Math.ceil(totalDays * 0.8);
-    const remainingDeficitDays = Math.max(0, requiredDaysFor80 - effectivePresentDays);
+    const TARGET_SEMESTER_DAYS = 45;
+    const effectivePresentDays = baseAttendedDays + approvedCount;
+    const updatedAttendancePercent = Math.min(
+      100,
+      Math.round((effectivePresentDays / TARGET_SEMESTER_DAYS) * 1000) / 10
+    );
+    const remainingDeficitDays = Math.max(0, TARGET_SEMESTER_DAYS - effectivePresentDays);
 
     revalidatePath("/attendance/remedial");
     revalidatePath("/dashboard");
@@ -404,7 +573,9 @@ export async function reviewRemedialTaskAction(
       success: true,
       message:
         status === "APPROVED"
-          ? `อนุมัติการแก้แถวสำเร็จ! เวลาเข้าแถวสุทธิปรับเป็น ${updatedAttendancePercent}%`
+          ? `อนุมัติการแก้แถวสำเร็จ! ยอดเข้าแถวสะสมเป็น ${effectivePresentDays}/${TARGET_SEMESTER_DAYS} ครั้ง ${
+              remainingDeficitDays === 0 ? "(ครบเกณฑ์ 45 ครั้งแล้ว)" : `(ยังขาดอีก ${remainingDeficitDays} ครั้ง)`
+            }`
           : "ปฏิเสธรายการแก้แถวเรียบร้อยแล้ว",
       updatedAttendancePercent,
       remainingDeficitDays,

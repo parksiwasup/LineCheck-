@@ -38,6 +38,7 @@ model User {
   password            String?
   image               String?
   role                Role               @default(TEACHER)
+  classrooms          String?            // Comma-separated list e.g. "ม.4/1,ม.4/2" or null for all (ADMIN)
   recordedAttendances AttendanceRecord[] @relation("RecordedBy")
   approvedRemedials   RemedialRecord[]   @relation("ApprovedBy")
   createdAt           DateTime           @default(now())

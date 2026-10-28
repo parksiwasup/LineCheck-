@@ -28,7 +28,13 @@ import {
   ClipboardCheck,
   ShieldAlert,
   LayoutDashboard,
+  FileSpreadsheet,
+  Download,
+  Award,
+  GraduationCap,
 } from "lucide-react";
+import * as XLSX from "xlsx";
+import { BulkImportModal } from "./bulk-import-modal";
 import {
   upsertStudentAction,
   toggleStudentStatusAction,
@@ -107,6 +113,7 @@ export function AdminBackofficeClient({
 
   // Student Dialog state
   const [isStudentModalOpen, setIsStudentModalOpen] = React.useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = React.useState(false);
   const [studentForm, setStudentForm] = React.useState<{
     id?: string;
     studentId: string;
@@ -151,6 +158,48 @@ export function AdminBackofficeClient({
       return matchClass && matchStatus && matchQuery;
     });
   }, [initialData.students, classroomFilter, statusFilter, studentSearch]);
+
+  const handleExportStudentsExcel = () => {
+    const listToExport = filteredStudents;
+    const exportData = listToExport.map((s, idx) => ({
+      "ลำดับ": idx + 1,
+      "รหัสนักเรียน": s.studentId,
+      "คำนำหน้า": s.title,
+      "ชื่อจริง": s.firstName,
+      "นามสกุล": s.lastName,
+      "ห้องเรียน": s.classroom,
+      "สถานะการศึกษา": s.status === "ACTIVE" ? "กำลังศึกษา" : "พัก/ย้ายออก",
+      "ประวัติเช็คชื่อ (วัน)": s.attendanceCount,
+      "ขาดแถว (วัน)": s.absentCount,
+      "แก้แถว (ครั้ง)": s.remedialCount,
+      "วันที่ลงทะเบียน": format(new Date(s.createdAtIso), "dd/MM/yyyy"),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+
+    ws["!cols"] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 16 },
+    ];
+
+    const fileName = `รายชื่อนักเรียน_${classroomFilter === "ALL" ? "ทุกห้อง" : classroomFilter}_${format(
+      new Date(),
+      "yyyyMMdd"
+    )}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success(`ส่งออกรายชื่อนักเรียนสำเร็จ (${listToExport.length} คน)`);
+  };
 
   const classroomBreakdown = React.useMemo(() => {
     return initialData.classrooms.map((room) => {
@@ -381,6 +430,14 @@ export function AdminBackofficeClient({
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
+              onClick={() => setIsBulkImportOpen(true)}
+              variant="outline"
+              className="border-primary/50 bg-primary/10 text-white hover:bg-primary/20 shadow-sm gap-1.5"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              <span>นำเข้า Excel / CSV</span>
+            </Button>
+            <Button
               onClick={() => handleOpenAddStudent()}
               className="bg-primary text-primary-foreground shadow-sm"
             >
@@ -490,6 +547,26 @@ export function AdminBackofficeClient({
                 <span className="flex items-center gap-2">
                   <ShieldAlert className="h-3.5 w-3.5 text-rose-500" />
                   <span>หน้าระบบแก้แถว (&lt; 80%)</span>
+                </span>
+                <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </Link>
+              <Link
+                href="/grades"
+                className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-medium hover:border-primary/50 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Award className="h-3.5 w-3.5 text-amber-500" />
+                  <span>ระบบตัดเกรดกิจกรรม (ผ./มผ.)</span>
+                </span>
+                <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </Link>
+              <Link
+                href="/portal"
+                className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-medium hover:border-primary/50 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <GraduationCap className="h-3.5 w-3.5 text-primary" />
+                  <span>หน้านักเรียน/ผู้ปกครองเช็คผล</span>
                 </span>
                 <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
               </Link>
@@ -695,6 +772,26 @@ export function AdminBackofficeClient({
                         className="h-9 pl-8 text-xs rounded-xl"
                       />
                     </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsBulkImportOpen(true)}
+                      className="h-9 gap-1.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">นำเข้า</span> Excel/CSV
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportStudentsExcel}
+                      className="h-9 gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">ส่งออก</span> Excel
+                    </Button>
                   </div>
                 </div>
               </CardHeader>
@@ -1316,6 +1413,15 @@ export function AdminBackofficeClient({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Import Modal */}
+      <BulkImportModal
+        open={isBulkImportOpen}
+        onOpenChange={setIsBulkImportOpen}
+        onSuccess={() => router.refresh()}
+        existingClassrooms={initialData.classrooms}
+        initialClassroom={classroomFilter === "ALL" ? "" : classroomFilter}
+      />
     </div>
   );
 }
