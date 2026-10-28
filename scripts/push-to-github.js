@@ -57,11 +57,11 @@ async function main() {
   console.log("=====================================================");
   console.log(`Repository Directory: ${rootDir}\n`);
 
-  let version = "v1.2.0";
+  let version = "v1.4.1";
   const versionInput = await ask(`ป้อนเลขเวอร์ชัน (กด Enter เพื่อใช้ ${version}): `);
   version = versionInput.trim() || version;
 
-  const defaultMsg = `Release ${version}: แยกสัดส่วนระบบหน้าบ้าน-หลังบ้าน, โหมดพื้นหลัง 6 โทนสี และรองรับทุกแพลตฟอร์ม`;
+  const defaultMsg = `Release ${version}: ปรับแต่งระบบ LineCheck+ ให้สมบูรณ์และพร้อมใช้งาน`;
   const commitMsgInput = await ask("ข้อความ Commit (กด Enter เพื่อใช้ข้อความเริ่มต้น): ");
   const commitMsg = commitMsgInput.trim() || defaultMsg;
 
@@ -71,9 +71,18 @@ async function main() {
 
   updateReadme(rootDir, version, commitMsg, extraNote);
 
-  const defaultRepo = "https://github.com/parksiwasup/LineCheck-.git";
+  // ตรวจสอบ token จาก .git-token อัตโนมัติ
+  let gitToken = "";
+  const tokenFile = path.join(rootDir, ".git-token");
+  if (fs.existsSync(tokenFile)) {
+    gitToken = fs.readFileSync(tokenFile, "utf8").trim();
+  }
+
+  const defaultRepo = gitToken
+    ? `https://${gitToken}@github.com/parksiwasup/LineCheck-.git`
+    : "https://github.com/parksiwasup/LineCheck-.git";
   const repoUrlInput = await ask(
-    `\nป้อน GitHub Repository URL (กด Enter เพื่อใช้ "${defaultRepo}"): `
+    `\nป้อน GitHub Repository URL (กด Enter เพื่อใช้ "${defaultRepo.replace(/https:\/\/[^@]+@/, "https://")}"): `
   );
   const repoUrl = repoUrlInput.trim() || defaultRepo;
 
