@@ -84,10 +84,17 @@ async function main() {
     }
     execSync(`${gitBin} branch -M main`, { cwd: rootDir, stdio: "ignore" });
 
+    // ตรวจสอบ remote origin เดิม ถ้ามี token ให้คงไว้
+    let currentOrigin = "";
     try {
-      execSync(`${gitBin} remote remove origin`, { cwd: rootDir, stdio: "ignore" });
+      currentOrigin = execSync(`${gitBin} remote get-url origin`, { cwd: rootDir, encoding: "utf8" }).trim();
     } catch {}
-    execSync(`${gitBin} remote add origin ${repoUrl}`, { cwd: rootDir, stdio: "inherit" });
+
+    if (!currentOrigin) {
+      execSync(`${gitBin} remote add origin ${repoUrl}`, { cwd: rootDir, stdio: "inherit" });
+    } else if (!currentOrigin.includes("@github.com") && repoUrl !== defaultRepo) {
+      execSync(`${gitBin} remote set-url origin ${repoUrl}`, { cwd: rootDir, stdio: "inherit" });
+    }
 
     console.log("[2/4] จัดเตรียมไฟล์เข้าสู่ Staging...");
     execSync(`${gitBin} add .`, { cwd: rootDir, stdio: "inherit" });
