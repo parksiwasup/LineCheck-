@@ -6,6 +6,16 @@ import { AttendanceStatus, RemedialStatus, StudentStatus } from "@prisma/client"
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 
+export type WeeklyTrendItem = {
+  dateIso: string;
+  dateLabel: string;
+  present: number;
+  late: number;
+  absent: number;
+  leave: number;
+  attendanceRate: number;
+};
+
 export interface DashboardAnalyticsData {
   summary: {
     totalStudents: number;
@@ -20,15 +30,7 @@ export interface DashboardAnalyticsData {
     deficitStudentCount: number;
     compliantStudentCount: number;
   };
-  weeklyTrend: {
-    dateIso: string;
-    dateLabel: string;
-    present: number;
-    late: number;
-    absent: number;
-    leave: number;
-    attendanceRate: number;
-  }[];
+  weeklyTrend: WeeklyTrendItem[];
   complianceRatio: {
     name: string;
     value: number;
