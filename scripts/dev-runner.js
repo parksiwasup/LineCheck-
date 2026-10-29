@@ -4,9 +4,14 @@ const path = require("path");
 const net = require("net");
 const fs = require("fs");
 
-if (process.platform === "win32") {
+const isWin = process.platform === "win32";
+const isMac = process.platform === "darwin";
+const npmCmd = isWin ? "npm.cmd" : "npm";
+const npxCmd = isWin ? "npx.cmd" : "npx";
+
+if (isWin) {
   try {
-    execSync("chcp 874", { stdio: "ignore" });
+    execSync("chcp 65001", { stdio: "ignore" });
   } catch {}
 }
 
@@ -33,10 +38,6 @@ console.log(">> LineCheck+ | Student Attendance & Remedial System");
 console.log(">> Multi-Platform: Windows * macOS * Linux * iOS * Android");
 console.log("=====================================================");
 console.log(`Starting dev server on port ${PORT}...\n`);
-
-const isWin = process.platform === "win32";
-const isMac = process.platform === "darwin";
-const npmCmd = isWin ? "npm.cmd" : "npm";
 
 function freePort(port) {
   try {
@@ -127,24 +128,22 @@ async function ensureDependencies() {
   const envPath = path.join(rootDir, ".env");
   const envExamplePath = path.join(rootDir, ".env.example");
   if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
-    console.log("[*] สร้างไฟล์ .env อัตโนมัติจาก .env.example...");
+    console.log("[*] Creating .env from .env.example...");
     fs.copyFileSync(envExamplePath, envPath);
   }
 
   const nodeModulesPath = path.join(rootDir, "node_modules");
-  const nextBin = path.join(nodeModulesPath, ".bin", isWin ? "next.cmd" : "next");
-  if (!fs.existsSync(nodeModulesPath) || !fs.existsSync(nextBin)) {
+  const nextCli = path.join(nodeModulesPath, "next", "dist", "bin", "next");
+  if (!fs.existsSync(nodeModulesPath) || !fs.existsSync(nextCli)) {
     console.log("\n=====================================================");
-    console.log("[*] ตรวจพบการรันครั้งแรกบนเครื่องใหม่!");
-    console.log("[*] กำลังติดตั้ง Dependencies อัตโนมัติ (npm install)...");
+    console.log("[*] First-time setup: Installing dependencies (npm install)...");
     console.log("=====================================================\n");
     execSync(`${npmCmd} install --legacy-peer-deps`, { cwd: rootDir, stdio: "inherit" });
   }
 
   const prismaClient = path.join(nodeModulesPath, ".prisma", "client");
   if (!fs.existsSync(prismaClient)) {
-    console.log("[*] กำลังสร้าง Prisma Client...");
-    const npxCmd = isWin ? "npx.cmd" : "npx";
+    console.log("[*] Generating Prisma Client...");
     try {
       execSync(`${npxCmd} prisma generate`, { cwd: rootDir, stdio: "inherit" });
     } catch {}
@@ -156,7 +155,6 @@ async function start() {
   await ensureMySQL();
   freePort(PORT);
 
-  // Copy URL to clipboard (Windows / macOS / Linux)
   try {
     const clipCmd = isWin ? "clip" : isMac ? "pbcopy" : "xclip";
     const proc = spawn(clipCmd);
@@ -164,21 +162,21 @@ async function start() {
     proc.stdin.end();
   } catch {}
 
-  const server = spawn(npmCmd, ["run", "dev"], {
+  const nextCli = path.join(rootDir, "node_modules", "next", "dist", "bin", "next");
+  const server = spawn(process.execPath, [nextCli, "dev", "-H", "0.0.0.0", "-p", String(PORT)], {
     cwd: rootDir,
     stdio: "pipe",
-    shell: isWin,
   });
 
   let openedBrowser = false;
 
   function openUrlCrossPlatform(url) {
     if (isWin) {
-      exec(`start ${url}`);
+      exec(`start "" "${url}"`);
     } else if (isMac) {
-      exec(`open ${url}`);
+      exec(`open "${url}"`);
     } else {
-      exec(`xdg-open ${url}`);
+      exec(`xdg-open "${url}"`);
     }
   }
 
@@ -201,7 +199,7 @@ async function start() {
           console.log("=====================================================\n");
           setTimeout(() => {
             openUrlCrossPlatform(APP_URL);
-          }, 1000);
+          }, 800);
         }
       });
     });
@@ -211,7 +209,7 @@ async function start() {
   prefixOutput(server.stderr, "Next.js", "33");
 
   function cleanup() {
-    console.log("\nกำลังปิดระบบ LineCheck+...");
+    console.log("\nShutting down LineCheck+...");
     if (isWin && server && server.pid) {
       exec(`taskkill /pid ${server.pid} /T /F`, () => {});
     } else if (server) {
