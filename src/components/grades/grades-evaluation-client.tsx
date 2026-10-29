@@ -17,6 +17,7 @@ import {
   BookOpenCheck,
   TrendingUp,
   AlertTriangle,
+  Copy,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -437,7 +438,23 @@ export function GradesEvaluationClient({
                           {idx + 1}
                         </TableCell>
                         <TableCell className="text-xs font-mono font-semibold">
-                          {s.studentId}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-primary font-mono font-bold bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
+                              {s.studentId}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(s.studentId);
+                                toast.success(`คัดลอกรหัส ${s.studentId} เรียบร้อยแล้ว`);
+                              }}
+                              className="flex items-center justify-center h-6 w-6 rounded-full border border-blue-400/80 bg-blue-50/80 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all cursor-pointer shadow-2xs shrink-0 print:hidden"
+                              title="คัดลอกรหัสนักเรียน"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs font-medium">
                           {s.fullName}

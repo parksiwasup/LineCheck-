@@ -32,6 +32,7 @@ import {
   Download,
   Award,
   GraduationCap,
+  Copy,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { BulkImportModal } from "./bulk-import-modal";
@@ -823,7 +824,23 @@ export function AdminBackofficeClient({
                         filteredStudents.map((st) => (
                           <TableRow key={st.id}>
                             <TableCell className="font-mono font-bold text-primary">
-                              {st.studentId}
+                              <div className="flex items-center gap-1.5">
+                                <span className="bg-primary/10 px-2 py-0.5 rounded-lg border border-primary/20">
+                                  {st.studentId}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(st.studentId);
+                                    toast.success(`คัดลอกรหัส ${st.studentId} เรียบร้อยแล้ว`);
+                                  }}
+                                  className="flex items-center justify-center h-6 w-6 rounded-full border border-blue-400/80 bg-blue-50/80 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all cursor-pointer shadow-2xs shrink-0"
+                                  title="คัดลอกรหัสนักเรียน"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </button>
+                              </div>
                             </TableCell>
                             <TableCell className="font-medium">
                               {st.fullName}

@@ -28,6 +28,7 @@ import {
   getStudentPortalDataAction,
   type StudentPortalData,
 } from "@/actions/portal";
+import { StudentMonthlyCalendar } from "@/components/attendance/student-monthly-calendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +55,7 @@ interface StudentPortalClientProps {
 
 export function StudentPortalClient({
   initialStudentId = "",
-  sampleIds = ["67001", "67002", "67003", "67004"],
+  sampleIds = ["66001", "66003", "66005", "64001"],
 }: StudentPortalClientProps) {
   const [searchId, setSearchId] = React.useState(initialStudentId);
   const [portalData, setPortalData] = React.useState<StudentPortalData | null>(null);
@@ -356,8 +357,8 @@ export function StudentPortalClient({
                     </span>
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    แก้แล้ว {metrics.approvedRemedialCount} วัน • รอตรวจ{" "}
-                    {metrics.pendingRemedialCount} วัน
+                    แก้แถวแล้ว {metrics.approvedRemedialCount} วัน • ค้างแก้{" "}
+                    {Math.max(0, metrics.absentDays - metrics.approvedRemedialCount)} วัน
                   </p>
                 </div>
 
@@ -392,6 +393,18 @@ export function StudentPortalClient({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Monthly Attendance Calendar */}
+              <div className="space-y-2 pt-2 no-print">
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  ปฏิทินการเข้าแถวรายเดือน (ดูวันมาเรียน • พักโควตา • วันขาด)
+                </h3>
+                <StudentMonthlyCalendar
+                  studentIdOrCode={portalData.student.studentId}
+                  compact
+                />
               </div>
 
               {/* Absent dates breakdown table */}
@@ -429,17 +442,9 @@ export function StudentPortalClient({
                               {item.remark || "ขาดแถวหน้าเสาธง"}
                             </TableCell>
                             <TableCell className="text-xs">
-                              {item.remedialStatus === "APPROVED" ? (
+                              {item.remedialStatus !== "NONE" && item.remedialStatus !== "REJECTED" ? (
                                 <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">
-                                  อนุมัติชดเชยแล้ว
-                                </Badge>
-                              ) : item.remedialStatus === "PENDING" ? (
-                                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px]">
-                                  รอครูตรวจสอบ
-                                </Badge>
-                              ) : item.remedialStatus === "REJECTED" ? (
-                                <Badge variant="destructive" className="text-[10px]">
-                                  ไม่ผ่าน (ต้องส่งใหม่)
+                                  แก้แถวแล้ว
                                 </Badge>
                               ) : (
                                 <Badge variant="outline" className="text-[10px] text-rose-500 border-rose-500/30">

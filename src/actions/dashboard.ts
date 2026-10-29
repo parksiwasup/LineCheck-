@@ -2,9 +2,16 @@
 
 import { prisma } from "@/lib/prisma";
 import { formatDateISO } from "@/lib/utils";
+import { evaluateStudentAttendanceRules, getSchoolDayKind } from "@/lib/attendance-rules";
 import { AttendanceStatus, RemedialStatus, StudentStatus } from "@prisma/client";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
+
+export type WeeklyTrendStudent = {
+  studentId: string;
+  fullName: string;
+  classroom: string;
+};
 
 export type WeeklyTrendItem = {
   dateIso: string;
@@ -14,6 +21,7 @@ export type WeeklyTrendItem = {
   absent: number;
   leave: number;
   attendanceRate: number;
+  absentStudents?: WeeklyTrendStudent[];
 };
 
 export interface ClassroomDetailStudent {
@@ -42,6 +50,20 @@ export interface ClassroomSummaryItem {
   students: ClassroomDetailStudent[];
 }
 
+export interface RecentRemedialItem {
+  id: string;
+  studentCode: string;
+  studentName: string;
+  classroom: string;
+  type: "MAKEUP_ATTENDED" | "ACTIVITY";
+  activityTitle: string;
+  targetDateIso: string;
+  remediedOnDateIso: string;
+  hoursEarned?: number;
+  status: RemedialStatus;
+  createdAtIso: string;
+}
+
 export interface DashboardAnalyticsData {
   summary: {
     totalStudents: number;
@@ -63,16 +85,7 @@ export interface DashboardAnalyticsData {
     color: string;
   }[];
   classroomSummary: ClassroomSummaryItem[];
-  recentRemedials: {
-    id: string;
-    studentName: string;
-    classroom: string;
-    activityTitle: string;
-    targetDateIso: string;
-    hoursEarned: number;
-    status: RemedialStatus;
-    createdAtIso: string;
-  }[];
+  recentRemedials: RecentRemedialItem[];
 }
 
 export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsData> {
@@ -86,6 +99,7 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
   });
 
   const allRecords = await prisma.attendanceRecord.findMany({
+    include: { student: true },
     orderBy: { date: "asc" },
   });
 
@@ -98,10 +112,18 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
   // Group all records by dateIso
   const dateMap = new Map<
     string,
-    { present: number; late: number; absent: number; leave: number; total: number }
+    {
+      present: number;
+      late: number;
+      absent: number;
+      leave: number;
+      total: number;
+      absentStudents: WeeklyTrendStudent[];
+    }
   >();
 
   for (const r of allRecords) {
+    if (getSchoolDayKind(r.date) !== "REQUIRED") continue;
     const dIso = formatDateISO(r.date);
     const current = dateMap.get(dIso) ?? {
       present: 0,
@@ -109,11 +131,19 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
       absent: 0,
       leave: 0,
       total: 0,
+      absentStudents: [],
     };
 
     current.total += 1;
     if (r.status === AttendanceStatus.ABSENT) {
       current.absent += 1;
+      if (r.student) {
+        current.absentStudents.push({
+          studentId: r.student.studentId,
+          fullName: `${r.student.title ?? ""}${r.student.firstName} ${r.student.lastName}`.trim(),
+          classroom: r.student.classroom,
+        });
+      }
     } else {
       current.present += 1;
     }
@@ -129,6 +159,7 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     absent: 0,
     leave: 0,
     total: 0,
+    absentStudents: [],
   };
 
   const todayAttendanceRate =
@@ -154,6 +185,7 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
       absent: item.absent,
       leave: 0,
       attendanceRate: rate,
+      absentStudents: item.absentStudents,
     };
   });
 
@@ -175,36 +207,56 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     }
   >();
 
+  const allResolvedRemedials: RecentRemedialItem[] = [];
+
+  const now = new Date();
   for (const s of students) {
-    const total = s.attendanceRecords.length;
-    const presentCount = s.attendanceRecords.filter(
-      (r) => r.status !== AttendanceStatus.ABSENT
-    ).length;
-    const absentCount = s.attendanceRecords.filter(
-      (r) => r.status === AttendanceStatus.ABSENT
-    ).length;
+    const evalRes = evaluateStudentAttendanceRules(
+      s.attendanceRecords,
+      s.remedialRecords,
+      now
+    );
 
-    const baseAttended = presentCount;
+    for (const a of evalRes.absences) {
+      if (a.isRemedied) {
+        allResolvedRemedials.push({
+          id: `${s.id}-${a.dateIso}`,
+          studentCode: s.studentId,
+          studentName: `${s.title}${s.firstName} ${s.lastName}`,
+          classroom: s.classroom,
+          type: "MAKEUP_ATTENDED",
+          activityTitle: "มาแก้แถว",
+          targetDateIso: a.dateIso,
+          remediedOnDateIso: a.remediedOnDateIso ?? a.dateIso,
+          status: RemedialStatus.APPROVED,
+          createdAtIso: a.remediedOnDateIso ?? a.dateIso,
+        });
+      }
+    }
 
-    const approvedForStudent = s.remedialRecords.filter(
-      (rem) => rem.status === RemedialStatus.APPROVED
+    const requiredRecordsCount = s.attendanceRecords.filter(
+      (r) => getSchoolDayKind(r.date) === "REQUIRED"
     ).length;
-    const pendingForStudent = s.remedialRecords.filter(
-      (rem) => rem.status === RemedialStatus.PENDING
-    ).length;
+    const total = Math.max(1, requiredRecordsCount);
+    const presentCount = evalRes.totalRawAttendedDays;
+    const absentCount = evalRes.absences.length;
+    const approvedForStudent = evalRes.totalRemediedDays;
+    const pendingForStudent = 0;
 
     approvedRemedialCount += approvedForStudent;
     pendingRemedialCount += pendingForStudent;
 
-    const rawRate = total > 0 ? (baseAttended / total) * 100 : 100;
-    const effectiveAttended = Math.min(total, baseAttended + approvedForStudent);
-    const effectiveRate = total > 0 ? (effectiveAttended / total) * 100 : 100;
-    const isCompliant = effectiveRate >= 80;
-    const deficitDays = Math.max(0, Math.ceil(total * 0.8) - effectiveAttended);
+    const rawRate = requiredRecordsCount > 0 ? (presentCount / total) * 100 : 100;
+    const effectiveAttended = Math.min(total, evalRes.effectivePresentDays);
+    const effectiveRate =
+      requiredRecordsCount > 0 ? (effectiveAttended / total) * 100 : 100;
+    const unremediedAbsentCount = evalRes.unremediedAbsences.length;
+    const isCompliant = unremediedAbsentCount === 0;
+    const deficitDays = unremediedAbsentCount;
 
-    if (rawRate >= 80) {
+    if (absentCount === 0) {
       compliantStandardCount += 1;
-    } else if (effectiveRate >= 80) {
+    } else if (unremediedAbsentCount === 0) {
       remediedCompliantCount += 1;
     } else {
       deficitCount += 1;
@@ -230,7 +282,7 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
       id: s.id,
       studentId: s.studentId,
       fullName: `${s.title}${s.firstName} ${s.lastName}`,
-      totalDays: total,
+      totalDays: requiredRecordsCount,
       presentDays: presentCount,
       lateDays: 0,
       absentDays: absentCount,
@@ -282,16 +334,15 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     })
   );
 
-  const recentRemedials = recentRemedialRecords.map((rem) => ({
-    id: rem.id,
-    studentName: `${rem.student.title}${rem.student.firstName} ${rem.student.lastName}`,
-    classroom: rem.student.classroom,
-    activityTitle: rem.activityTitle,
-    targetDateIso: formatDateISO(rem.targetDate),
-    hoursEarned: rem.hoursEarned,
-    status: rem.status,
-    createdAtIso: rem.createdAt.toISOString(),
-  }));
+  // Sort resolved remedials by date descending (latest remedial date first)
+  allResolvedRemedials.sort((a, b) => {
+    return (
+      b.remediedOnDateIso.localeCompare(a.remediedOnDateIso) ||
+      b.targetDateIso.localeCompare(a.targetDateIso)
+    );
+  });
+
+  const recentRemedials = allResolvedRemedials;
 
   return {
     summary: {
@@ -303,7 +354,7 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
       todayAbsent: latestCounts.absent,
       todayLeave: latestCounts.leave,
       pendingRemedialCount,
-      approvedRemedialCount,
+      approvedRemedialCount: allResolvedRemedials.length,
       deficitStudentCount: deficitCount,
       compliantStudentCount: compliantStandardCount + remediedCompliantCount,
     },

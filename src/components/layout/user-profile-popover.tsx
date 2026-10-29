@@ -159,7 +159,7 @@ export function UserProfilePopover({ user }: UserProfilePopoverProps) {
             />
           </div>
 
-          <div className="flex flex-col items-start text-left leading-tight">
+          <div className="hidden sm:flex flex-col items-start text-left leading-tight">
             <span className="font-bold text-xs max-w-[120px] truncate text-foreground group-hover:text-primary transition-colors">
               {user.name?.split(" ")[0] || (isAdmin ? "ฝ่ายปกครอง" : "ครูที่ปรึกษา")}
             </span>

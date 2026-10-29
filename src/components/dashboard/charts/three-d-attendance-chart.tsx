@@ -1,7 +1,30 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  RotateCcw,
+  Sparkles,
+  ExternalLink,
+  Copy,
+  Check,
+  Calendar,
+  UserX,
+  TrendingUp,
+  TrendingDown,
+  CheckCircle2,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import type { WeeklyTrendItem } from "@/actions/dashboard";
 
 interface ThreeDAttendanceChartProps {
@@ -10,16 +33,20 @@ interface ThreeDAttendanceChartProps {
 
 export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
+  const [selectedDay, setSelectedDay] = React.useState<WeeklyTrendItem | null>(null);
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [replayKey, setReplayKey] = React.useState<number>(0);
+  const [isAnimating, setIsAnimating] = React.useState<boolean>(false);
 
   // SVG Dimension & Coordinate setup
-  const svgWidth = 740;
+  const svgWidth = 760;
   const svgHeight = 330;
   const groundY = 245;
   const maxBarHeight = 175;
   const totalStudents = 24;
 
   const leftPad = 48;
-  const rightPad = 48;
+  const rightPad = 68; // Increased padding to avoid Y-axis label collision
   const usableWidth = svgWidth - leftPad - rightPad;
   const n = data.length || 7;
   const step = usableWidth / Math.max(n - 1, 1);
@@ -65,9 +92,41 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
 
   const linePathD = createSmoothLinePath(linePoints);
 
+  const handleCopyId = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    toast.success(`คัดลอกรหัสประจำตัว ${id} แล้ว`);
+    setTimeout(() => setCopiedId(null), 1600);
+  };
+
+  const handleTriggerReplay = () => {
+    setIsAnimating(true);
+    setReplayKey((k) => k + 1);
+    setTimeout(() => setIsAnimating(false), 900);
+  };
+
   return (
     <div className="relative w-full overflow-hidden select-none">
+      {/* Control Bar: Replay & Interactive Guidance */}
+      <div className="flex items-center justify-between mb-1 px-1">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+          <Sparkles className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+          <span>คลิกที่เสาหรือจุด 3D เพื่อเปิดดูรายชื่อคนขาดของวันนั้น</span>
+        </div>
+        <button
+          type="button"
+          onClick={handleTriggerReplay}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+          title="เล่นแอนิเมชันเสา 3D ดันตัวขึ้นใหม่"
+        >
+          <RotateCcw className={`h-3 w-3 ${isAnimating ? "animate-spin text-primary" : ""}`} />
+          <span>เล่นแอนิเมชัน 3D</span>
+        </button>
+      </div>
+
       <svg
+        key={replayKey}
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         className="w-full h-auto drop-shadow-sm transition-all"
         style={{ minHeight: "300px" }}
@@ -78,10 +137,13 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
             <feGaussianBlur in="SourceGraphic" stdDeviation="4" />
           </filter>
           <filter id="neon-glow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#6366f1" floodOpacity="0.5" />
+            <feDropShadow dx="0" dy="3" stdDeviation="5" floodColor="#6366f1" floodOpacity="0.6" />
           </filter>
           <filter id="orb-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#818cf8" floodOpacity="0.7" />
+            <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#818cf8" floodOpacity="0.8" />
+          </filter>
+          <filter id="column-glow" x="-40%" y="-20%" width="180%" height="140%">
+            <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#34d399" floodOpacity="0.65" />
           </filter>
 
           {/* Gradients for 3D Faces: Present (Green) */}
@@ -97,36 +159,6 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           <linearGradient id="present-top" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#6ee7b7" />
             <stop offset="100%" stopColor="#10b981" />
-          </linearGradient>
-
-          {/* Gradients for 3D Faces: Late (Amber) */}
-          <linearGradient id="late-front" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#fbbf24" />
-            <stop offset="35%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#d97706" />
-          </linearGradient>
-          <linearGradient id="late-side" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#b45309" />
-            <stop offset="100%" stopColor="#78350f" />
-          </linearGradient>
-          <linearGradient id="late-top" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#fde68a" />
-            <stop offset="100%" stopColor="#f59e0b" />
-          </linearGradient>
-
-          {/* Gradients for 3D Faces: Leave (Sky) */}
-          <linearGradient id="leave-front" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#38bdf8" />
-            <stop offset="35%" stopColor="#0ea5e9" />
-            <stop offset="100%" stopColor="#0284c7" />
-          </linearGradient>
-          <linearGradient id="leave-side" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#0369a1" />
-            <stop offset="100%" stopColor="#075985" />
-          </linearGradient>
-          <linearGradient id="leave-top" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#bae6fd" />
-            <stop offset="100%" stopColor="#0ea5e9" />
           </linearGradient>
 
           {/* Gradients for 3D Faces: Absent (Rose) */}
@@ -178,12 +210,12 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
                 >
                   {val}
                 </text>
-                {/* Right Y-axis percentage */}
+                {/* Right Y-axis percentage with ample padding */}
                 <text
                   x={svgWidth - rightPad + 22}
                   y={y + 4}
                   textAnchor="start"
-                  className="fill-muted-foreground text-[10px] font-semibold"
+                  className="fill-muted-foreground text-[10px] font-bold"
                 >
                   {pct}%
                 </text>
@@ -192,19 +224,34 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           })}
         </g>
 
-        {/* 3D Ground Shadow Under Each Pillar */}
+        {/* 3D Ground Shadow & Hover Light Aura Under Each Pillar */}
         {data.map((_, i) => {
           const cx = leftPad + i * step;
+          const isHovered = hoveredIndex === i;
           return (
-            <ellipse
-              key={`shadow-${i}`}
-              cx={cx + barWidth / 2 + dx / 2}
-              cy={groundY + 3}
-              rx={barWidth * 0.75}
-              ry={6}
-              fill="rgba(0, 0, 0, 0.28)"
-              filter="url(#threed-blur)"
-            />
+            <g key={`shadow-group-${i}`}>
+              <ellipse
+                cx={cx + barWidth / 2 + dx / 2}
+                cy={groundY + 3}
+                rx={isHovered ? barWidth * 0.9 : barWidth * 0.75}
+                ry={isHovered ? 8 : 6}
+                fill={isHovered ? "rgba(99, 102, 241, 0.45)" : "rgba(0, 0, 0, 0.28)"}
+                filter="url(#threed-blur)"
+                className="transition-all duration-200"
+              />
+              {isHovered && (
+                <ellipse
+                  cx={cx + barWidth / 2 + dx / 2}
+                  cy={groundY + 2}
+                  rx={barWidth * 0.95}
+                  ry={7}
+                  fill="none"
+                  stroke="#818cf8"
+                  strokeWidth="1.5"
+                  opacity="0.8"
+                />
+              )}
+            </g>
           );
         })}
 
@@ -264,70 +311,95 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           const topSegment = segments[segments.length - 1];
 
           return (
-            <g
+            <motion.g
               key={`bar-${i}`}
-              className="cursor-pointer transition-all duration-200"
-              onMouseEnter={() => setHoveredIndex(i)}
-              onMouseLeave={() => setHoveredIndex(null)}
+              initial={{ scaleY: 0, opacity: 0.4 }}
+              animate={{ scaleY: 1, opacity: 1 }}
+              transition={{
+                duration: 0.55,
+                delay: i * 0.08,
+                ease: [0.34, 1.56, 0.64, 1],
+              }}
               style={{
-                transform: isHovered ? "translateY(-4px)" : "none",
-                transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                transformOrigin: `${x + barWidth / 2}px ${groundY}px`,
               }}
             >
-              {/* Stacked 3D Segments */}
-              {segments.map((seg) => {
-                const { frontFill, sideFill, yBottom, yTop } = seg;
-
-                return (
-                  <g key={seg.id}>
-                    {/* Front Face of Segment */}
-                    <polygon
-                      points={`${x},${yTop} ${x + barWidth},${yTop} ${x + barWidth},${yBottom} ${x},${yBottom}`}
-                      fill={frontFill}
-                      stroke="rgba(255,255,255,0.15)"
-                      strokeWidth="0.5"
-                    />
-
-                    {/* Right Side 3D Depth Face */}
-                    <polygon
-                      points={`${x + barWidth},${yTop} ${x + barWidth + dx},${yTop + dy} ${x + barWidth + dx},${yBottom + dy} ${x + barWidth},${yBottom}`}
-                      fill={sideFill}
-                      stroke="rgba(0,0,0,0.15)"
-                      strokeWidth="0.5"
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Top Cap Face for the highest segment in the pillar */}
-              {topSegment && (
-                <polygon
-                  points={`${x},${topSegment.yTop} ${x + dx},${topSegment.yTop + dy} ${x + barWidth + dx},${topSegment.yTop + dy} ${x + barWidth},${topSegment.yTop}`}
-                  fill={topSegment.topFill}
-                  stroke="rgba(255,255,255,0.3)"
-                  strokeWidth="0.75"
-                />
-              )}
-
-              {/* X-axis Date Label */}
-              <text
-                x={x + barWidth / 2 + dx / 2}
-                y={groundY + 22}
-                textAnchor="middle"
-                className={`text-[11px] transition-all ${
-                  isHovered
-                    ? "fill-primary font-bold text-[12px]"
-                    : "fill-muted-foreground font-medium"
-                }`}
+              <g
+                className="cursor-pointer transition-all duration-200"
+                onMouseEnter={() => setHoveredIndex(i)}
+                onMouseLeave={() => setHoveredIndex(null)}
+                onClick={() => setSelectedDay(item)}
+                style={{
+                  transform: isHovered ? "translateY(-6px)" : "none",
+                  transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                }}
               >
-                {item.dateLabel}
-              </text>
-            </g>
+                {/* Stacked 3D Segments */}
+                {segments.map((seg) => {
+                  const { frontFill, sideFill, yBottom, yTop } = seg;
+
+                  return (
+                    <g key={seg.id}>
+                      {/* Front Face of Segment */}
+                      <polygon
+                        points={`${x},${yTop} ${x + barWidth},${yTop} ${x + barWidth},${yBottom} ${x},${yBottom}`}
+                        fill={frontFill}
+                        stroke={isHovered ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.15)"}
+                        strokeWidth={isHovered ? "1" : "0.5"}
+                      />
+
+                      {/* Right Side 3D Depth Face */}
+                      <polygon
+                        points={`${x + barWidth},${yTop} ${x + barWidth + dx},${yTop + dy} ${x + barWidth + dx},${yBottom + dy} ${x + barWidth},${yBottom}`}
+                        fill={sideFill}
+                        stroke="rgba(0,0,0,0.15)"
+                        strokeWidth="0.5"
+                      />
+                    </g>
+                  );
+                })}
+
+                {/* Top Cap Face for the highest segment in the pillar */}
+                {topSegment && (
+                  <polygon
+                    points={`${x},${topSegment.yTop} ${x + dx},${topSegment.yTop + dy} ${x + barWidth + dx},${topSegment.yTop + dy} ${x + barWidth},${topSegment.yTop}`}
+                    fill={topSegment.topFill}
+                    stroke={isHovered ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.3)"}
+                    strokeWidth={isHovered ? "1.5" : "0.75"}
+                  />
+                )}
+
+                {/* X-axis Date Label & Click Indicator */}
+                <text
+                  x={x + barWidth / 2 + dx / 2}
+                  y={groundY + 22}
+                  textAnchor="middle"
+                  className={`text-[11px] transition-all ${
+                    isHovered
+                      ? "fill-primary font-extrabold text-[12px]"
+                      : "fill-muted-foreground font-medium"
+                  }`}
+                >
+                  {item.dateLabel}
+                </text>
+
+                {isHovered && (
+                  <text
+                    x={x + barWidth / 2 + dx / 2}
+                    y={groundY + 35}
+                    textAnchor="middle"
+                    className="fill-indigo-600 dark:fill-indigo-400 text-[9px] font-bold"
+                  >
+                    คลิกดูชื่อ
+                  </text>
+                )}
+              </g>
+            </motion.g>
           );
         })}
 
         {/* 3D Glowing Neon Trend Wire */}
-        <path
+        <motion.path
           d={linePathD}
           fill="none"
           stroke="#4f46e5"
@@ -336,8 +408,11 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           strokeLinejoin="round"
           opacity="0.25"
           filter="url(#neon-glow)"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
         />
-        <path
+        <motion.path
           d={linePathD}
           fill="none"
           stroke="#6366f1"
@@ -345,8 +420,11 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           strokeLinecap="round"
           strokeLinejoin="round"
           filter="url(#neon-glow)"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
         />
-        <path
+        <motion.path
           d={linePathD}
           fill="none"
           stroke="#e0e7ff"
@@ -354,44 +432,51 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           strokeLinecap="round"
           strokeLinejoin="round"
           opacity="0.9"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
         />
 
         {/* 3D Floating Glowing Spheres at each data point */}
         {linePoints.map((pt, i) => {
           const isHovered = hoveredIndex === i;
           return (
-            <g
+            <motion.g
               key={`point-${i}`}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2 + i * 0.08, duration: 0.3 }}
               className="cursor-pointer"
               onMouseEnter={() => setHoveredIndex(i)}
               onMouseLeave={() => setHoveredIndex(null)}
+              onClick={() => setSelectedDay(pt.item)}
             >
               {/* Drop Shadow of sphere */}
               <circle
                 cx={pt.x}
                 cy={pt.y + 2}
-                r={isHovered ? 7 : 5}
+                r={isHovered ? 8 : 5}
                 fill="rgba(0,0,0,0.35)"
               />
               {/* 3D Sphere Body */}
               <circle
                 cx={pt.x}
                 cy={pt.y}
-                r={isHovered ? 8 : 6}
+                r={isHovered ? 9 : 6}
                 fill="url(#sphere-glow)"
                 filter="url(#orb-glow)"
                 stroke="#ffffff"
-                strokeWidth={isHovered ? 2 : 1.5}
+                strokeWidth={isHovered ? 2.5 : 1.5}
                 className="transition-all duration-200"
               />
               {/* Specular White Dot */}
               <circle
                 cx={pt.x - (isHovered ? 2.5 : 2)}
                 cy={pt.y - (isHovered ? 2.5 : 2)}
-                r={isHovered ? 2 : 1.5}
+                r={isHovered ? 2.5 : 1.5}
                 fill="#ffffff"
               />
-            </g>
+            </motion.g>
           );
         })}
       </svg>
@@ -410,21 +495,25 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
                   ((leftPad + hoveredIndex * step) / svgWidth) * 100,
                   18
                 ),
-                82
+                80
               )}%`,
-              top: "12px",
+              top: "28px",
             }}
-            className="pointer-events-none absolute -translate-x-1/2 z-20 rounded-2xl border border-white/20 bg-card/90 px-4 py-3 shadow-xl backdrop-blur-md"
+            className="pointer-events-none absolute -translate-x-1/2 z-20 rounded-2xl border border-white/20 bg-card/95 px-4 py-3 shadow-xl backdrop-blur-md min-w-[210px]"
           >
+            {/* Tooltip Header */}
             <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-1.5 mb-2">
-              <span className="text-xs font-bold text-foreground">
-                วันที่ {data[hoveredIndex].dateLabel}
+              <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                <span>วันที่ {data[hoveredIndex].dateLabel}</span>
               </span>
               <span className="rounded-lg bg-indigo-500/15 px-2 py-0.5 text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
                 เข้าแถว {data[hoveredIndex].attendanceRate}%
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+
+            {/* Attendance breakdown */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs mb-2">
               <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-xs" />
                 <span>มา:</span>
@@ -435,6 +524,37 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
                 <span>ขาด:</span>
                 <span className="font-bold">{data[hoveredIndex].absent} คน</span>
               </div>
+            </div>
+
+            {/* Comparison vs Previous Day */}
+            {hoveredIndex > 0 && (
+              <div className="border-t border-border/50 pt-1.5 text-[10px] flex items-center justify-between font-medium">
+                <span className="text-muted-foreground">เทียบกับวันก่อนหน้า:</span>
+                {(() => {
+                  const prevRate = data[hoveredIndex - 1].attendanceRate;
+                  const diff = Math.round((data[hoveredIndex].attendanceRate - prevRate) * 10) / 10;
+                  if (diff > 0) {
+                    return (
+                      <span className="text-emerald-600 font-bold flex items-center gap-0.5">
+                        <TrendingUp className="h-3 w-3" /> +{diff}%
+                      </span>
+                    );
+                  }
+                  if (diff < 0) {
+                    return (
+                      <span className="text-rose-600 font-bold flex items-center gap-0.5">
+                        <TrendingDown className="h-3 w-3" /> {diff}%
+                      </span>
+                    );
+                  }
+                  return <span className="text-muted-foreground font-semibold">เท่าเดิม</span>;
+                })()}
+              </div>
+            )}
+
+            {/* Hint to click */}
+            <div className="mt-1.5 rounded-md bg-primary/5 border border-primary/10 px-2 py-0.5 text-[10px] text-primary/80 font-semibold text-center">
+              👆 คลิกเพื่อดูรายชื่อนักเรียน
             </div>
           </motion.div>
         )}
@@ -460,6 +580,139 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
           </span>
         </div>
       </div>
+
+      {/* Drill-down Modal on Pillar Click */}
+      <Dialog open={!!selectedDay} onOpenChange={(open) => !open && setSelectedDay(null)}>
+        <DialogContent className="max-w-md sm:max-w-lg">
+          {selectedDay && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-base sm:text-lg">
+                      สรุปการเข้าแถววันที่ {selectedDay.dateLabel}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs">
+                      รหัสวัน {selectedDay.dateIso} • นักเรียนทั้งหมด {totalStudents} คน
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              {/* Quick Stats Pill */}
+              <div className="grid grid-cols-3 gap-2.5 rounded-2xl border border-border/80 bg-muted/30 p-3 text-center">
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground font-medium">อัตราเข้าแถว</p>
+                  <p className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">
+                    {selectedDay.attendanceRate}%
+                  </p>
+                </div>
+                <div className="space-y-0.5 border-x border-border/60">
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">มาแถว</p>
+                  <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {selectedDay.present} คน
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">ขาดแถว</p>
+                  <p className="text-lg font-extrabold text-rose-600 dark:text-rose-400">
+                    {selectedDay.absent} คน
+                  </p>
+                </div>
+              </div>
+
+              {/* Absent Students List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <UserX className="h-4 w-4 text-rose-500" />
+                    <span>รายชื่อนักเรียนที่ขาดแถว ({selectedDay.absent} คน)</span>
+                  </h4>
+                  {selectedDay.absent > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      คลิกปุ่มสีฟ้าเพื่อคัดลอกรหัส
+                    </span>
+                  )}
+                </div>
+
+                {selectedDay.absentStudents && selectedDay.absentStudents.length > 0 ? (
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 divide-y divide-border/40 rounded-xl border border-border/70 p-2 bg-card">
+                    {selectedDay.absentStudents.map((s, idx) => (
+                      <div
+                        key={s.studentId + idx}
+                        className="flex items-center justify-between pt-1.5 first:pt-0"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-foreground">
+                            {s.studentId}
+                          </span>
+                          {/* Circular blue copy button */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyId(e, s.studentId)}
+                            title="คัดลอกรหัสประจำตัว"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-blue-400/80 bg-blue-50/80 text-blue-600 transition-all hover:border-blue-500 hover:bg-blue-100 hover:scale-110 active:scale-95 shadow-2xs cursor-pointer"
+                          >
+                            {copiedId === s.studentId ? (
+                              <Check className="h-3 w-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </button>
+                          <span className="text-xs font-medium text-foreground">
+                            {s.fullName}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] font-semibold text-muted-foreground">
+                          {s.classroom}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedDay.absent === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-center space-y-1.5">
+                    <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                      ยอดเยี่ยมมาก! วันนี้มาเข้าแถวครบ 100%
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      ไม่มีนักเรียนขาดแถวแม้แต่คนเดียว
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 text-center text-xs text-muted-foreground rounded-xl border border-border/60">
+                    มีผู้ขาดแถว {selectedDay.absent} คน (บันทึกภาพรวม)
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSelectedDay(null)}
+                  className="rounded-xl text-xs h-9 cursor-pointer"
+                >
+                  ปิดหน้าต่าง
+                </Button>
+                <Button
+                  asChild
+                  className="rounded-xl text-xs h-9 font-semibold gap-1.5 shadow-sm"
+                >
+                  <Link href={`/attendance/check?date=${selectedDay.dateIso}`}>
+                    <span>เปิดใบเช็คชื่อประจำวันนี้</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

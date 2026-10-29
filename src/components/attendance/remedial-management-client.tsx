@@ -40,9 +40,11 @@ import {
   Camera,
   Image as ImageIcon,
   Target,
+  Copy,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PrintableNoticeModal } from "./printable-notice-modal";
+import { StudentMonthlyCalendarModal } from "./student-monthly-calendar";
 import {
   submitRemedialTaskAction,
   reviewRemedialTaskAction,
@@ -134,6 +136,8 @@ interface RemedialManagementClientProps {
       weeklyPassedCount: number;
       weeklyFailedCount: number;
       weeklyInProgressCount: number;
+      scheduledMakeupStudentsCount: number;
+      overdueStudentsCount: number;
       pendingApprovalCount: number;
       remediedSuccessCount: number;
       totalBelowStandardRaw: number;
@@ -169,23 +173,15 @@ export function RemedialManagementClient({
     return currentUser.classrooms.split(",").map((c) => c.trim()).filter(Boolean);
   }, [currentUser?.classrooms]);
 
-  const canApproveStudentRoom = React.useCallback(
-    (room: string) => {
-      if (userRole === "ADMIN") return true;
-      if (teacherRooms.length === 0) return true;
-      return teacherRooms.includes(room);
-    },
-    [userRole, teacherRooms]
-  );
-
   const [isPending, startTransition] = React.useTransition();
   const [statusFilter, setStatusFilter] = React.useState<
-    "ALL" | "WEEKLY_FAILED" | "INCOMPLETE_45" | "PENDING" | "COMPLETED_45"
+    "ALL" | "SCHEDULED_MAKEUP" | "OVERDUE_DEBT" | "INCOMPLETE_45" | "COMPLETED_45"
   >("ALL");
   const [selectedStudent, setSelectedStudent] =
     React.useState<StudentDeficitReportItem | null>(
       initialReport.deficitStudents[0] ?? null
     );
+  const [calendarStudentCode, setCalendarStudentCode] = React.useState<string | null>(null);
   const [isFormDialogOpen, setIsFormDialogOpen] = React.useState(false);
   const [isPrintNoticeOpen, setIsPrintNoticeOpen] = React.useState(false);
   const [imagePreview, setImagePreview] = React.useState<string | null>(null);
@@ -322,7 +318,10 @@ export function RemedialManagementClient({
     }
   }, [initialReport.deficitStudents, selectedStudent]);
 
-  const handleOpenRemedialModal = (student: StudentDeficitReportItem) => {
+  const handleOpenRemedialModal = (
+    student: StudentDeficitReportItem,
+    specificDateIso?: string
+  ) => {
     setSelectedStudent(student);
     const availableAbsence =
       student.absenceDates.find(
@@ -331,7 +330,7 @@ export function RemedialManagementClient({
 
     form.reset({
       studentId: student.id,
-      targetDate: availableAbsence?.dateIso ?? "",
+      targetDate: specificDateIso ?? availableAbsence?.dateIso ?? "",
       activityTitle: PRESET_ACTIVITIES[0],
       description: "",
       hoursEarned: 1,
@@ -397,12 +396,12 @@ export function RemedialManagementClient({
         s.fullName.toLowerCase().includes(remedialSearchQuery.toLowerCase());
 
       let matchStatus = true;
-      if (statusFilter === "WEEKLY_FAILED") {
-        matchStatus = s.thisWeekStatus === "FAILED";
+      if (statusFilter === "SCHEDULED_MAKEUP") {
+        matchStatus = s.graceMakeupAbsenceCount > 0;
+      } else if (statusFilter === "OVERDUE_DEBT") {
+        matchStatus = s.overdueAbsenceCount > 0;
       } else if (statusFilter === "INCOMPLETE_45") {
         matchStatus = !s.isCompletedSemester;
-      } else if (statusFilter === "PENDING") {
-        matchStatus = s.pendingRemedialCount > 0;
       } else if (statusFilter === "COMPLETED_45") {
         matchStatus = s.isCompletedSemester;
       }
@@ -430,46 +429,88 @@ export function RemedialManagementClient({
               <ArrowUpDown className="h-3.5 w-3.5" />
             </button>
           ),
-          cell: (info) => (
-            <span className="font-mono font-semibold text-primary">
-              {info.getValue()}
-            </span>
-          ),
+          cell: (info) => {
+            const sid = info.getValue();
+            return (
+              <div className="flex items-center gap-1.5 group/code">
+                <button
+                  type="button"
+                  onClick={() => setCalendarStudentCode(sid)}
+                  className="inline-flex items-center font-mono font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded-lg border border-primary/20"
+                  title="คลิกเพื่อดูปฏิทินรายเดือนของนักเรียน"
+                >
+                  {sid}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(sid);
+                    toast.success(`คัดลอกรหัส ${sid} เรียบร้อยแล้ว`);
+                  }}
+                  className="flex items-center justify-center h-6 w-6 rounded-full border border-blue-400/80 bg-blue-50/80 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all cursor-pointer shadow-2xs shrink-0"
+                  title="คัดลอกรหัสนักเรียน"
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          },
         }),
         columnHelper.accessor("fullName", {
           header: "ชื่อ - นามสกุล",
           cell: ({ row }) => (
-            <div>
-              <p className="font-medium text-foreground">{row.original.fullName}</p>
+            <button
+              type="button"
+              onClick={() => setCalendarStudentCode(row.original.studentId)}
+              className="text-left group cursor-pointer"
+              title="คลิกดูปฏิทินรายเดือนของนักเรียน"
+            >
+              <p className="font-medium text-foreground group-hover:text-primary transition-colors">
+                {row.original.fullName}
+              </p>
               <p className="text-xs text-muted-foreground">
                 ห้อง {row.original.classroom}
               </p>
-            </div>
+            </button>
           ),
         }),
         columnHelper.accessor("thisWeekStatus", {
-          header: "สัปดาห์นี้ (เกณฑ์ ≥ 3 วัน)",
+          header: "สัปดาห์นี้ (เข้าแถว จ./อ./ศ. • คลินิกแก้ พ./พฤ.)",
           cell: ({ row }) => {
             const st = row.original;
             return (
-              <div className="space-y-1.5 min-w-[130px]">
+              <div className="space-y-1.5 min-w-[175px]">
                 <div className="flex items-center gap-1">
                   {st.thisWeekDays.map((d) => (
                     <span
                       key={d.dateIso}
                       title={`${d.dayName} (${d.dateIso}): ${
-                        d.status === "PRESENT"
-                          ? "มาเข้าแถว"
+                        d.note ??
+                        (d.status === "PRESENT"
+                          ? "มาเข้าแถวปกติ"
+                          : d.status === "REST"
+                          ? "วันหยุดพักตามสิทธิ์"
+                          : d.status === "MAKEUP_ATTENDED"
+                          ? "มาเข้าคลินิกแก้แถวในวันหยุด"
+                          : d.status === "REMEDIED"
+                          ? "แก้แถวผ่านแล้ว"
                           : d.status === "ABSENT"
-                          ? "ขาดแถว"
-                          : "ยังไม่ถึงวัน / ยังไม่บันทึก"
+                          ? "ขาดแถว!"
+                          : "ยังไม่เช็คชื่อ")
                       }`}
                       className={cn(
                         "flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-all",
                         d.status === "PRESENT"
                           ? "bg-emerald-500 text-white shadow-xs"
+                          : d.status === "REST"
+                          ? "bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/40"
+                          : d.status === "MAKEUP_ATTENDED"
+                          ? "bg-fuchsia-600 text-white shadow-xs ring-1 ring-fuchsia-500/40"
+                          : d.status === "REMEDIED"
+                          ? "bg-violet-600 text-white shadow-xs"
                           : d.status === "ABSENT"
-                          ? "bg-rose-500 text-white shadow-xs"
+                          ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/30"
                           : "bg-muted text-muted-foreground border border-border/60"
                       )}
                     >
@@ -478,20 +519,21 @@ export function RemedialManagementClient({
                   ))}
                 </div>
                 <div className="flex items-center gap-1">
-                  {st.thisWeekStatus === "PASSED" ? (
+                  {st.graceMakeupAbsenceCount > 0 ? (
+                    <Badge variant="warning" className="text-[10px] py-0 px-1.5 font-semibold">
+                      <Clock className="h-3 w-3 mr-0.5" />
+                      รอนัดแก้ พุธ-พฤหัสฯ นี้ ({st.graceMakeupAbsenceCount} วัน)
+                    </Badge>
+                  ) : st.thisWeekStatus === "PASSED" ? (
                     <Badge variant="success" className="text-[10px] py-0 px-1.5 font-medium">
                       <CheckCircle2 className="h-3 w-3 mr-0.5" />
-                      ผ่าน (มา {st.thisWeekPresentDays}/3 วัน)
-                    </Badge>
-                  ) : st.thisWeekStatus === "FAILED" ? (
-                    <Badge variant="destructive" className="text-[10px] py-0 px-1.5 font-medium">
-                      <AlertTriangle className="h-3 w-3 mr-0.5" />
-                      ตกเกณฑ์ (มา {st.thisWeekPresentDays}/3 วัน)
+                      ครบ {st.thisWeekPresentDays}/3 วัน
+                      {st.thisWeekRemediedDays > 0 ? ` (แก้ ${st.thisWeekRemediedDays})` : ""}
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-medium text-amber-600 border-amber-400/50 bg-amber-500/10">
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-medium text-sky-700 dark:text-sky-300 border-sky-400/50 bg-sky-500/10">
                       <Clock className="h-3 w-3 mr-0.5" />
-                      สะสม (มา {st.thisWeekPresentDays}/3 วัน)
+                      กำลังสะสม (มา {st.thisWeekPresentDays}/3 วัน)
                     </Badge>
                   )}
                 </div>
@@ -547,7 +589,7 @@ export function RemedialManagementClient({
                   />
                 </div>
                 {st.approvedRemedialCount > 0 && (
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                  <p className="text-[10px] text-violet-600 dark:text-violet-400 font-medium">
                     (มาปกติ {st.presentDays} + แก้แล้ว {st.approvedRemedialCount} ครั้ง)
                   </p>
                 )}
@@ -556,37 +598,44 @@ export function RemedialManagementClient({
           },
         }),
         columnHelper.accessor("remedialOverallStatus", {
-          header: "สถานะการแก้แถว",
+          header: "สถานะเส้นตายรายสัปดาห์",
           cell: ({ row }) => {
             const st = row.original;
-            if (st.isCompletedSemester && st.thisWeekStatus !== "FAILED") {
+            if (st.overdueAbsenceCount > 0) {
               return (
-                <Badge variant="success">
-                  <CheckCircle2 className="h-3 w-3" />
-                  ครบ 45 ครั้งแล้ว
-                </Badge>
+                <div className="space-y-1">
+                  <Badge variant="destructive">
+                    <AlertTriangle className="h-3 w-3" />
+                    ค้างแก้สะสมข้ามสัปดาห์ ({st.overdueAbsenceCount} ครั้ง)
+                  </Badge>
+                  {st.graceMakeupAbsenceCount > 0 && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                      + รอนัดแก้รอบนี้อีก {st.graceMakeupAbsenceCount} วัน
+                    </p>
+                  )}
+                </div>
               );
             }
-            if (st.pendingRemedialCount > 0) {
+            if (st.graceMakeupAbsenceCount > 0) {
               return (
                 <Badge variant="warning">
                   <Clock className="h-3 w-3" />
-                  รอตรวจรับงาน ({st.pendingRemedialCount})
+                  รอนัดแก้ พุธ-พฤหัสฯ นี้ ({st.graceMakeupAbsenceCount} วัน)
                 </Badge>
               );
             }
-            if (st.thisWeekStatus === "FAILED") {
+            if (st.remedialOverallStatus === "REMEDIED") {
               return (
-                <Badge variant="destructive">
-                  <AlertTriangle className="h-3 w-3" />
-                  ตกเกณฑ์สัปดาห์นี้
+                <Badge variant="success">
+                  <CheckCircle2 className="h-3 w-3" />
+                  แก้แถวผ่านเกณฑ์แล้ว
                 </Badge>
               );
             }
             return (
-              <Badge variant="destructive">
-                <AlertTriangle className="h-3 w-3" />
-                ต้องแก้แถว ({st.remainingDeficitDays} ครั้ง)
+              <Badge variant="success">
+                <CheckCircle2 className="h-3 w-3" />
+                ปกติ (ไม่ติดขาด)
               </Badge>
             );
           },
@@ -596,10 +645,20 @@ export function RemedialManagementClient({
           header: "การจัดการ",
           cell: ({ row }) => (
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCalendarStudentCode(row.original.studentId)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/80 bg-blue-50/70 dark:bg-blue-950/40 hover:bg-blue-100/80 dark:hover:bg-blue-900/50 px-3 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 transition-all shrink-0 cursor-pointer shadow-xs hover:shadow-sm"
+                title="ดูปฏิทินการเข้าแถวเดือนนี้"
+              >
+                <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <span>ปฏิทิน</span>
+              </button>
               <Button
                 size="sm"
                 variant="default"
                 onClick={() => handleOpenRemedialModal(row.original)}
+                className="gap-1.5 px-3 py-1.5 h-8 rounded-xl shadow-2xs font-medium"
               >
                 <FilePlus2 className="h-3.5 w-3.5" />
                 <span>บันทึกแก้แถว</span>
@@ -641,15 +700,15 @@ export function RemedialManagementClient({
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
               ระบบจัดการแก้กิจกรรมเข้าแถว
             </h1>
-            <Badge variant="outline" className="text-xs shrink-0 border-primary/40 bg-primary/10 text-primary font-semibold">
-              เป้าหมายเทอม: 45 ครั้ง
+            <Badge variant="outline" className="text-xs shrink-0 border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300 font-semibold">
+              คลินิกแก้แถววันหยุด: พุธ • พฤหัสบดี
             </Badge>
             <Badge variant="destructive" className="text-xs shrink-0 font-semibold">
-              เกณฑ์สัปดาห์: จ.-ศ. ต้องครบ ≥ 3 วัน
+              เส้นตายตัดรอบ: อาทิตย์ 23:59 น.
             </Badge>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            ระเบียบกิจกรรมหน้าเสาธง: นักเรียนทุกคนใน 1 เทอมต้องเข้าแถวให้ครบ 45 ครั้ง และภายใน 1 อาทิตย์ (จันทร์ - ศุกร์) ต้องมาให้ครบอย่างน้อย 3 วัน
+            แยกชัดเจนระหว่าง <strong>🟠 รอนัดแก้ พุธ-พฤหัสฯ นี้</strong> (ขาดในสัปดาห์ หรือโอนจากวันศุกร์ที่แล้ว) กับ <strong>❌ ค้างแก้สะสมข้ามสัปดาห์</strong> (พ้นเส้นตายวันอาทิตย์แล้วไม่มาแก้)
           </p>
         </div>
 
@@ -684,7 +743,7 @@ export function RemedialManagementClient({
               className="w-full sm:w-auto shadow-md shrink-0 h-9 text-xs"
             >
               <FilePlus2 className="h-4 w-4" />
-              <span>บันทึกกิจกรรมแก้แถวใหม่</span>
+              <span>บันทึกกิจกรรมจิตอาสาแก้แถว</span>
             </Button>
           )}
         </div>
@@ -692,36 +751,36 @@ export function RemedialManagementClient({
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
-        <Card className="cursor-pointer transition-all hover:border-amber-400/50" onClick={() => setStatusFilter("INCOMPLETE_45")}>
+        <Card className="cursor-pointer transition-all hover:border-amber-400/60" onClick={() => setStatusFilter("SCHEDULED_MAKEUP")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                ยังไม่ครบเป้า 45 ครั้ง
+                รอนัดแก้ พุธ-พฤหัสฯ นี้
               </p>
               <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-amber-600 dark:text-amber-400">
-                {initialReport.stats.incompleted45Count} คน
+                {initialReport.stats.scheduledMakeupStudentsCount} คน
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                ครบ 45 ครั้งแล้ว {initialReport.stats.completed45Count} คน
+                ขาดรอบนี้ / โอนจากศุกร์ที่แล้ว
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
-              <Target className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Clock className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:border-rose-400/50" onClick={() => setStatusFilter("WEEKLY_FAILED")}>
+        <Card className="cursor-pointer transition-all hover:border-rose-400/60" onClick={() => setStatusFilter("OVERDUE_DEBT")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                สัปดาห์นี้: ตกเกณฑ์ (&lt; 3 วัน)
+                ค้างแก้ข้ามสัปดาห์ (ดองงาน!)
               </p>
               <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-rose-600 dark:text-rose-400">
-                {initialReport.stats.weeklyFailedCount} คน
+                {initialReport.stats.overdueStudentsCount} คน
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                ผ่านเกณฑ์สัปดาห์ {initialReport.stats.weeklyPassedCount} คน
+                พ้นเส้นตายวันอาทิตย์ 23:59 น.
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
@@ -730,40 +789,40 @@ export function RemedialManagementClient({
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:border-sky-400/50" onClick={() => setStatusFilter("PENDING")}>
+        <Card className="cursor-pointer transition-all hover:border-violet-400/50" onClick={() => setStatusFilter("ALL")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                รออนุมัติงาน (Pending)
+                แก้แถวสำเร็จแล้วทั้งหมด
               </p>
-              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-sky-600 dark:text-sky-400">
-                {initialReport.stats.pendingApprovalCount} รายการ
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-violet-600 dark:text-violet-400">
+                {initialReport.allRemedialLogs.length} ครั้ง
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                พร้อมให้ครูที่ปรึกษาตรวจรับ
+                คลินิกวันหยุด พ.-พฤ. + จิตอาสา
               </p>
             </div>
-            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0">
-              <Clock className="h-5 w-5 sm:h-6 sm:w-6" />
+            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0">
+              <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:border-emerald-400/50" onClick={() => setStatusFilter("COMPLETED_45")}>
+        <Card className="cursor-pointer transition-all hover:border-emerald-400/50" onClick={() => setStatusFilter("INCOMPLETE_45")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
                 ผ่านเกณฑ์ 45 ครั้งสมบูรณ์
               </p>
               <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-emerald-600 dark:text-emerald-400">
-                {initialReport.stats.completed45Count} คน
+                {initialReport.stats.completed45Count} / {initialReport.stats.totalStudents} คน
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                มีเวลาเข้าแถวครบ 45 ครั้ง 🎉
+                กำลังสะสม {initialReport.stats.incompleted45Count} คน
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
-              <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Target className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
@@ -777,7 +836,7 @@ export function RemedialManagementClient({
               ตารางนักเรียน ({filteredDeficitData.length})
             </TabsTrigger>
             <TabsTrigger value="approval-logs">
-              ประวัติและอนุมัติผลกิจกรรมแก้แถว ({initialReport.allRemedialLogs.length})
+              ประวัติการแก้แถวทั้งหมด ({initialReport.allRemedialLogs.length})
             </TabsTrigger>
           </TabsList>
 
@@ -799,15 +858,27 @@ export function RemedialManagementClient({
               </button>
               <button
                 type="button"
-                onClick={() => setStatusFilter("WEEKLY_FAILED")}
+                onClick={() => setStatusFilter("SCHEDULED_MAKEUP")}
                 className={cn(
                   "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
-                  statusFilter === "WEEKLY_FAILED"
+                  statusFilter === "SCHEDULED_MAKEUP"
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
+                )}
+              >
+                🟠 รอนัดแก้ พ.-พฤ. นี้
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("OVERDUE_DEBT")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "OVERDUE_DEBT"
                     ? "bg-rose-600 text-white"
                     : "bg-rose-500/10 text-rose-600 hover:bg-rose-500/20"
                 )}
               >
-                🔴 ตกเกณฑ์สัปดาห์นี้
+                ❌ ค้างสะสมข้ามสัปดาห์
               </button>
               <button
                 type="button"
@@ -815,35 +886,11 @@ export function RemedialManagementClient({
                 className={cn(
                   "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
                   statusFilter === "INCOMPLETE_45"
-                    ? "bg-amber-600 text-white"
-                    : "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20"
+                    ? "bg-sky-600 text-white"
+                    : "bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20"
                 )}
               >
                 ⚠️ ยังไม่ครบ 45 ครั้ง
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter("PENDING")}
-                className={cn(
-                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
-                  statusFilter === "PENDING"
-                    ? "bg-sky-600 text-white"
-                    : "bg-sky-500/10 text-sky-600 hover:bg-sky-500/20"
-                )}
-              >
-                ⏳ รอตรวจ
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter("COMPLETED_45")}
-                className={cn(
-                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
-                  statusFilter === "COMPLETED_45"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
-                )}
-              >
-                🟢 ครบ 45 ครั้ง
               </button>
             </div>
 
@@ -894,10 +941,10 @@ export function RemedialManagementClient({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">
-                รายชื่อนักเรียนและสถานะการเข้าแถว (เป้าหมาย 45 ครั้ง / สัปดาห์ละ ≥ 3 วัน)
+                รายชื่อนักเรียนและสถานะการแก้แถว (คลินิกวันหยุด พุธ-พฤหัสบดี & เส้นตายวันอาทิตย์ 23:59 น.)
               </CardTitle>
               <CardDescription>
-                ติดตามสถานะรอบสัปดาห์ (จันทร์-ศุกร์) และความคืบหน้าสะสมสู่เป้าหมาย 45 ครั้ง พร้อมระบบส่งงานจิตอาสาแก้แถว
+                บังคับเข้าแถว จันทร์ • อังคาร • ศุกร์ (3 วัน/สัปดาห์) • หากขาดให้เสียสิทธิ์วันหยุดมาเข้าคลินิกแก้แถวในวันพุธ/พฤหัสบดี (1 วันหยุด = ล้าง 1 วันขาด แบบ FIFO) หรือส่งงานจิตอาสา
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -975,24 +1022,24 @@ export function RemedialManagementClient({
                                     ห้อง {item.classroom}
                                   </p>
                                 </div>
-                                {item.isCompletedSemester && item.thisWeekStatus !== "FAILED" ? (
-                                  <Badge variant="success">ครบ 45 ครั้งแล้ว</Badge>
-                                ) : item.pendingRemedialCount > 0 ? (
-                                  <Badge variant="warning">
-                                    รอตรวจ ({item.pendingRemedialCount})
-                                  </Badge>
-                                ) : item.thisWeekStatus === "FAILED" ? (
-                                  <Badge variant="destructive">ตกเกณฑ์สัปดาห์นี้</Badge>
-                                ) : (
+                                {item.overdueAbsenceCount > 0 ? (
                                   <Badge variant="destructive">
-                                    ขาดอีก {item.remainingDeficitDays} ครั้ง
+                                    ค้างข้ามสัปดาห์ ({item.overdueAbsenceCount} ครั้ง)
                                   </Badge>
+                                ) : item.graceMakeupAbsenceCount > 0 ? (
+                                  <Badge variant="warning">
+                                    รอนัดแก้ พ.-พฤ. นี้ ({item.graceMakeupAbsenceCount} วัน)
+                                  </Badge>
+                                ) : item.remedialOverallStatus === "REMEDIED" ? (
+                                  <Badge variant="success">แก้แถวผ่านแล้ว</Badge>
+                                ) : (
+                                  <Badge variant="success">ปกติ (ไม่ติดขาด)</Badge>
                                 )}
                               </div>
 
                               {/* Week Tracker */}
                               <div className="flex items-center justify-between text-xs bg-muted/40 p-2 rounded-lg">
-                                <span className="text-muted-foreground font-medium">สัปดาห์นี้ (≥ 3 วัน):</span>
+                                <span className="text-muted-foreground font-medium">สัปดาห์นี้ (เข้าแถว จ./อ./ศ.):</span>
                                 <div className="flex items-center gap-1">
                                   {item.thisWeekDays.map((d) => (
                                     <span
@@ -1001,8 +1048,14 @@ export function RemedialManagementClient({
                                         "flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold",
                                         d.status === "PRESENT"
                                           ? "bg-emerald-500 text-white"
+                                          : d.status === "REST"
+                                          ? "bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/40"
+                                          : d.status === "MAKEUP_ATTENDED"
+                                          ? "bg-fuchsia-600 text-white"
+                                          : d.status === "REMEDIED"
+                                          ? "bg-violet-600 text-white"
                                           : d.status === "ABSENT"
-                                          ? "bg-rose-500 text-white"
+                                          ? "bg-amber-500 text-white"
                                           : "bg-muted text-muted-foreground border border-border/50"
                                       )}
                                     >
@@ -1050,14 +1103,25 @@ export function RemedialManagementClient({
                                 </div>
                               </div>
 
-                              <Button
-                                size="sm"
-                                className="w-full"
-                                onClick={() => handleOpenRemedialModal(item)}
-                              >
-                                <FilePlus2 className="h-3.5 w-3.5" />
-                                <span>บันทึกกิจกรรมแก้แถว</span>
-                              </Button>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="w-full gap-1.5"
+                                  onClick={() => setCalendarStudentCode(item.studentId)}
+                                >
+                                  <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                                  <span>ปฏิทินเดือนนี้</span>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="w-full"
+                                  onClick={() => handleOpenRemedialModal(item)}
+                                >
+                                  <FilePlus2 className="h-3.5 w-3.5" />
+                                  <span>บันทึกแก้แถว</span>
+                                </Button>
+                              </div>
                             </div>
                           );
                         })
@@ -1105,10 +1169,10 @@ export function RemedialManagementClient({
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <CardTitle className="text-base">
-                    รายการส่งงานกิจกรรมแก้แถวและอนุมัติชดเชยเวลาเรียน
+                    ประวัติการบันทึกกิจกรรมแก้แถวและชดเชยวันขาด
                   </CardTitle>
                   <CardDescription>
-                    เมื่อกด &quot;อนุมัติ (Approve)&quot; ระบบจะนำวันขาดแถวที่เลือกไปคำนวณชดเชยเปอร์เซ็นต์การเข้าแถวทันที
+                    รายการกิจกรรมจิตอาสาที่บันทึกแล้ว ระบบนำวันขาดไปคำนวณชดเชยให้ทันทีโดยไม่ต้องรออนุมัติซ้ำ
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1197,61 +1261,10 @@ export function RemedialManagementClient({
                       </div>
 
                       <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                        {log.status === "PENDING" ? (
-                          canApproveStudentRoom(log.classroom) ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="success"
-                                disabled={isPending}
-                                onClick={() =>
-                                  handleReviewLog(log.id, "APPROVED")
-                                }
-                              >
-                                <Check className="h-3.5 w-3.5" />
-                                <span>อนุมัติ (Approve)</span>
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={isPending}
-                                onClick={() =>
-                                  handleReviewLog(log.id, "REJECTED")
-                                }
-                              >
-                                <X className="h-3.5 w-3.5" />
-                                <span>ไม่อนุมัติ</span>
-                              </Button>
-                            </>
-                          ) : (
-                            <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1.5 rounded-xl border">
-                              รอครูประจำห้อง {log.classroom} หรือฝ่ายปกครองตรวจ
-                            </span>
-                          )
-                        ) : log.status === "APPROVED" ? (
-                          <Badge variant="success" className="px-3 py-1">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            อนุมัติแล้ว (ชดเชยสำเร็จ)
-                          </Badge>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <Badge variant="destructive" className="px-3 py-1">
-                              ไม่อนุมัติ (Rejected)
-                            </Badge>
-                            {canApproveStudentRoom(log.classroom) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={isPending}
-                                onClick={() =>
-                                  handleReviewLog(log.id, "APPROVED")
-                                }
-                              >
-                                อนุมัติย้อนหลัง
-                              </Button>
-                            )}
-                          </div>
-                        )}
+                        <Badge variant="success" className="px-3 py-1">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          แก้แถวแล้ว (ชดเชยสำเร็จ)
+                        </Badge>
                       </div>
                     </motion.div>
                   ))}
@@ -1356,14 +1369,23 @@ export function RemedialManagementClient({
                             locale: th,
                           })}
                         </span>
-                        <span className="text-[10px] text-muted-foreground mt-0.5">
-                          {abs.remedialStatus === "APPROVED"
-                            ? "อนุมัติแล้ว"
-                            : abs.remedialStatus === "PENDING"
-                            ? "รอตรวจ"
-                            : abs.remedialStatus === "REJECTED"
-                            ? "ส่งแก้ใหม่ได้"
-                            : "ยังไม่แก้แถว"}
+                        <span
+                          className={cn(
+                            "text-[10px] mt-0.5 font-medium",
+                            isUsed
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : abs.isOverdueCrossWeek
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {isUsed
+                            ? abs.activityTitle
+                              ? `แก้แล้ว (${abs.activityTitle})`
+                              : "แก้แถวแล้ว"
+                            : abs.isOverdueCrossWeek
+                            ? "ค้างสะสมข้ามสัปดาห์!"
+                            : "รอนัดแก้รอบนี้"}
                         </span>
                       </button>
                     );
@@ -1549,23 +1571,6 @@ export function RemedialManagementClient({
               </div>
             </div>
 
-            {/* Auto-approve toggle for Admin/Teacher */}
-            <label className="flex items-center gap-2.5 rounded-xl border border-border bg-muted/40 p-3 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                {...form.register("autoApprove")}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-              />
-              <div>
-                <span className="font-medium">
-                  อนุมัติทันทีและคำนวณชดเชยเวลาเรียน (Approve & Offset Immediately)
-                </span>
-                <p className="text-xs text-muted-foreground">
-                  หากครูตรวจสอบงานเรียบร้อยแล้ว สามารถติ๊กเพื่อปรับเพิ่ม % การเข้าแถวทันที
-                </p>
-              </div>
-            </label>
-
             <DialogFooter className="pt-2">
               <Button
                 type="button"
@@ -1600,6 +1605,23 @@ export function RemedialManagementClient({
         classrooms={Array.from(
           new Set(initialReport.deficitStudents.map((s) => s.classroom))
         ).sort()}
+      />
+
+      {/* Individual Student Monthly Calendar Modal */}
+      <StudentMonthlyCalendarModal
+        open={Boolean(calendarStudentCode)}
+        onOpenChange={(open) => {
+          if (!open) setCalendarStudentCode(null);
+        }}
+        studentIdOrCode={calendarStudentCode}
+        onSelectAbsentDate={(studentUuid, dateIso) => {
+          const found = initialReport.deficitStudents.find(
+            (s) => s.id === studentUuid
+          );
+          if (found) {
+            handleOpenRemedialModal(found, dateIso);
+          }
+        }}
       />
     </div>
   );

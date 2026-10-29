@@ -2,6 +2,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { formatDateISO } from "@/lib/utils";
+import {
+  evaluateStudentAttendanceRules,
+  getSchoolDayKind,
+  parseIsoToUtc,
+} from "@/lib/attendance-rules";
 import { AttendanceStatus, RemedialStatus, StudentStatus } from "@prisma/client";
 
 export interface StudentPortalData {
@@ -62,7 +67,6 @@ export async function getStudentPortalDataAction(
     return { success: false, message: "กรุณาระบุเลขประจำตัวนักเรียน" };
   }
 
-  // Find student by studentId
   const student = await prisma.student.findFirst({
     where: {
       OR: [
@@ -93,82 +97,71 @@ export async function getStudentPortalDataAction(
     };
   }
 
-  // Calculate distinct school days across the system
+  // Distinct required school days (Mon, Tue, Fri)
   const allSchoolDates = await prisma.attendanceRecord.findMany({
     select: { date: true },
     distinct: ["date"],
   });
-  const totalDays = Math.max(1, allSchoolDates.length);
+  const requiredDatesCount = allSchoolDates.filter(
+    (d) => getSchoolDayKind(d.date) === "REQUIRED"
+  ).length;
+  const totalDays = Math.max(1, requiredDatesCount);
 
-  // Group student's records
-  let presentDays = 0;
-  let lateDays = 0;
-  let absentDays = 0;
-  let leaveDays = 0;
+  const evalRes = evaluateStudentAttendanceRules(
+    student.attendanceRecords,
+    student.remedialRecords,
+    new Date()
+  );
 
-  student.attendanceRecords.forEach((r) => {
-    if (r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.EXEMPTION) {
-      presentDays++;
-    } else if (r.status === AttendanceStatus.LATE) {
-      lateDays++;
-      // standard school: 2 or 3 lates could count, but here let's keep direct status
-    } else if (r.status === AttendanceStatus.ABSENT) {
-      absentDays++;
-    } else if (r.status === AttendanceStatus.LEAVE) {
-      leaveDays++;
-    }
-  });
+  const presentDays = evalRes.totalRawAttendedDays;
+  const lateDays = student.attendanceRecords.filter(
+    (r) =>
+      getSchoolDayKind(r.date) === "REQUIRED" &&
+      r.status === AttendanceStatus.LATE
+  ).length;
+  const absentDays = evalRes.absences.length;
+  const leaveDays = student.attendanceRecords.filter(
+    (r) =>
+      getSchoolDayKind(r.date) === "MAKEUP_HOLIDAY" &&
+      (r.status === AttendanceStatus.LEAVE ||
+        r.status === AttendanceStatus.EXEMPTION)
+  ).length;
 
-  // Calculate remedials
   const approvedRemedials = student.remedialRecords.filter(
-    (r) => r.status === RemedialStatus.APPROVED
+    (r) => r.status !== RemedialStatus.REJECTED
   );
-  const pendingRemedials = student.remedialRecords.filter(
-    (r) => r.status === RemedialStatus.PENDING
-  );
-
-  const approvedRemedialCount = approvedRemedials.length;
-  const approvedRemedialHours = approvedRemedials.reduce(
-    (acc, r) => acc + r.hoursEarned,
-    0
-  );
-  const pendingRemedialCount = pendingRemedials.length;
+  const approvedRemedialCount = evalRes.totalRemediedDays;
+  const approvedRemedialHours =
+    approvedRemedials.reduce((acc, r) => acc + r.hoursEarned, 0) +
+    evalRes.absences.filter(
+      (a) => a.isRemedied && a.remedyType === "MAKEUP_WED_THU"
+    ).length;
+  const pendingRemedialCount = 0;
 
   const rawAttendancePercent = Math.min(100, (presentDays / totalDays) * 100);
-  const effectivePresentDays = Math.min(
-    totalDays,
-    presentDays + approvedRemedialCount
-  );
+  const effectivePresentDays = Math.min(totalDays, evalRes.effectivePresentDays);
   const netAttendancePercent = Math.min(
     100,
     (effectivePresentDays / totalDays) * 100
   );
 
-  const isCompliant = netAttendancePercent >= 80 ? 1 : 0;
+  const daysNeededToPass = evalRes.unremediedAbsences.length;
+  const isCompliant = daysNeededToPass === 0 ? 1 : 0;
   const gradeResult: "ผ" | "มผ" = isCompliant ? "ผ" : "มผ";
+  const hoursNeededToPass = daysNeededToPass * 1;
 
-  // Days needed to reach 80%: ceil(0.8 * totalDays) - effectivePresentDays
-  const minRequiredDays = Math.ceil(0.8 * totalDays);
-  const daysNeededToPass = Math.max(0, minRequiredDays - effectivePresentDays);
-  const hoursNeededToPass = daysNeededToPass * 1; // 1 hour volunteer per missed day standard
-
-  // Map absence dates
-  const absentRecords = student.attendanceRecords.filter(
-    (r) => r.status === AttendanceStatus.ABSENT
-  );
-
-  const remedialByTargetDate = new Map<string, typeof student.remedialRecords[0]>();
+  const remedialByTargetDate = new Map<
+    string,
+    (typeof student.remedialRecords)[0]
+  >();
   student.remedialRecords.forEach((r) => {
     const dIso = formatDateISO(r.targetDate);
     remedialByTargetDate.set(dIso, r);
   });
 
-  const absenceList = absentRecords.map((r) => {
-    const dIso = formatDateISO(r.date);
-    const linkedRemedial = remedialByTargetDate.get(dIso);
-
-    // Thai formatted date e.g. 15 ต.ค. 2569
-    const dObj = new Date(r.date);
+  const absenceList = [...evalRes.absences].reverse().map((abs) => {
+    const linkedRemedial = remedialByTargetDate.get(abs.dateIso);
+    const dObj = parseIsoToUtc(abs.dateIso);
     const dateFormatted = dObj.toLocaleDateString("th-TH", {
       day: "numeric",
       month: "short",
@@ -176,12 +169,14 @@ export async function getStudentPortalDataAction(
     });
 
     return {
-      dateIso: dIso,
+      dateIso: abs.dateIso,
       dateFormatted,
-      remark: r.remark,
-      remedialStatus: (linkedRemedial ? linkedRemedial.status : "NONE") as RemedialStatus | "NONE",
-      activityTitle: linkedRemedial?.activityTitle,
-      hoursEarned: linkedRemedial?.hoursEarned,
+      remark: abs.remark,
+      remedialStatus: (abs.isRemedied
+        ? RemedialStatus.APPROVED
+        : "NONE") as RemedialStatus | "NONE",
+      activityTitle: abs.remedyTitle ?? linkedRemedial?.activityTitle,
+      hoursEarned: linkedRemedial?.hoursEarned ?? (abs.isRemedied ? 1 : undefined),
       proofUrl: linkedRemedial?.proofUrl,
     };
   });
@@ -197,6 +192,31 @@ export async function getStudentPortalDataAction(
     createdAtIso: r.createdAt.toISOString(),
     approvedByName: r.approvedBy?.name ?? null,
   }));
+
+  for (const abs of evalRes.absences) {
+    if (
+      abs.isRemedied &&
+      abs.remedyType === "MAKEUP_WED_THU" &&
+      abs.remediedOnDateIso
+    ) {
+      recentRemedials.push({
+        id: `makeup-${student.id}-${abs.dateIso}`,
+        activityTitle: abs.remedyTitle ?? `มาแก้แถวในวันหยุด (${abs.remediedOnDateIso})`,
+        description: "เสียสิทธิ์วันหยุดพุธ/พฤหัสบดี มาเข้าคลินิกแก้แถวชดเชยวันขาด (1 ต่อ 1)",
+        targetDateIso: abs.dateIso,
+        hoursEarned: 1,
+        status: RemedialStatus.APPROVED,
+        proofUrl: null,
+        createdAtIso: `${abs.remediedOnDateIso}T08:00:00.000Z`,
+        approvedByName: "ระบบจับคู่อัตโนมัติ (FIFO)",
+      });
+    }
+  }
+
+  recentRemedials.sort(
+    (a, b) =>
+      new Date(b.createdAtIso).getTime() - new Date(a.createdAtIso).getTime()
+  );
 
   return {
     success: true,

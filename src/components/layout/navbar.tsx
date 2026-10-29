@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   ClipboardCheck,
+  CalendarDays,
   ShieldAlert,
   Sun,
   Moon,
@@ -57,8 +58,14 @@ const frontOfficeNavItems = [
     icon: ClipboardCheck,
   },
   {
+    href: "/attendance/calendar",
+    label: "ปฏิทินรายบุคคล",
+    mobileLabel: "ปฏิทิน",
+    icon: CalendarDays,
+  },
+  {
     href: "/attendance/remedial",
-    label: "ระบบแก้แถว (<80%)",
+    label: "ระบบแก้แถว",
     mobileLabel: "แก้แถว",
     icon: ShieldAlert,
   },

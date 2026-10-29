@@ -104,15 +104,32 @@ export function AppShell({ children, session }: AppShellProps) {
   }, [bgStyle, mounted]);
 
   // Page title / Breadcrumb resolution
-  const pageTitle = React.useMemo(() => {
-    if (pathname === "/dashboard") return "แดชบอร์ดภาพรวมสถิติ";
-    if (pathname.startsWith("/attendance/check")) return "เช็คชื่อเข้าแถวประจำวัน";
-    if (pathname.startsWith("/attendance/remedial")) return "ระบบจัดการและอนุมัติงานแก้แถว (< 80%)";
-    if (pathname.startsWith("/grades")) return "ระบบตัดเกรดกิจกรรมเข้าแถว (ผ./มผ.)";
-    if (pathname.startsWith("/portal")) return "พอร์ทัลนักเรียนและผู้ปกครอง (Student Portal)";
-    if (pathname.startsWith("/admin")) return "ระบบจัดการหลังบ้าน (Back-Office Admin)";
-    if (pathname.startsWith("/login")) return "เข้าสู่ระบบ (Sign In)";
-    return "LineCheck+";
+  const { pageTitle, mobileTitle } = React.useMemo(() => {
+    if (pathname === "/dashboard") {
+      return { pageTitle: "แดชบอร์ดภาพรวมสถิติ", mobileTitle: "แดชบอร์ดสถิติ" };
+    }
+    if (pathname.startsWith("/attendance/check")) {
+      return { pageTitle: "เช็คชื่อเข้าแถวประจำวัน", mobileTitle: "เช็คชื่อเข้าแถว" };
+    }
+    if (pathname.startsWith("/attendance/calendar")) {
+      return { pageTitle: "ปฏิทินรายบุคคลและคลินิกแก้แถว", mobileTitle: "ปฏิทินเข้าแถว" };
+    }
+    if (pathname.startsWith("/attendance/remedial")) {
+      return { pageTitle: "ระบบแก้แถว (< 80%)", mobileTitle: "ระบบแก้แถว" };
+    }
+    if (pathname.startsWith("/grades")) {
+      return { pageTitle: "ระบบตัดเกรดกิจกรรมเข้าแถว (ผ./มผ.)", mobileTitle: "ตัดเกรด" };
+    }
+    if (pathname.startsWith("/portal")) {
+      return { pageTitle: "พอร์ทัลนักเรียน (Student Portal)", mobileTitle: "เช็คผลเข้าแถว" };
+    }
+    if (pathname.startsWith("/admin")) {
+      return { pageTitle: "ระบบจัดการหลังบ้าน (Back-Office Admin)", mobileTitle: "จัดการหลังบ้าน" };
+    }
+    if (pathname.startsWith("/login")) {
+      return { pageTitle: "เข้าสู่ระบบ (Sign In)", mobileTitle: "เข้าสู่ระบบ" };
+    }
+    return { pageTitle: "LineCheck+", mobileTitle: "LineCheck+" };
   }, [pathname]);
 
   return (
@@ -148,25 +165,26 @@ export function AppShell({ children, session }: AppShellProps) {
       {/* 3. Main Content Wrapper (Shifted right on Desktop) */}
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64 xl:pl-72">
         {/* Top Utility Header */}
-        <header className="sticky top-0 z-30 h-16 w-full border-b border-border/80 bg-card/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 xl:px-10 flex items-center justify-between gap-3">
+        <header className="sticky top-0 z-30 h-16 w-full border-b border-border/80 bg-card/85 backdrop-blur-md px-3 sm:px-6 lg:px-8 xl:px-10 flex items-center justify-between gap-2 sm:gap-3">
           {/* Left: Mobile Toggle & Page Title */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
             <button
               type="button"
               onClick={() => setMobileSidebarOpen(true)}
-              className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground shadow-2xs hover:bg-muted"
+              className="lg:hidden flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground shadow-2xs hover:bg-muted"
             >
               <Menu className="h-5 w-5" />
             </button>
 
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium hidden sm:flex">
                 <span>หน้าหลัก</span>
                 <ChevronRight className="h-3 w-3" />
-                <span className="text-foreground font-semibold">{pageTitle}</span>
+                <span className="text-foreground font-semibold truncate">{pageTitle}</span>
               </div>
               <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
-                {pageTitle}
+                <span className="sm:hidden">{mobileTitle}</span>
+                <span className="hidden sm:inline">{pageTitle}</span>
               </h2>
             </div>
           </div>

@@ -52,13 +52,16 @@ export function PrintableNoticeModal({
       "ชื่อจริง": s.firstName,
       "นามสกุล": s.lastName,
       "ห้องเรียน": s.classroom,
-      "สัปดาห์นี้มา (วัน)": s.thisWeekPresentDays,
-      "สัปดาห์นี้ขาด (วัน)": s.thisWeekAbsentDays,
+      "สัปดาห์นี้มา (วัน)": `${s.thisWeekPresentDays}/3`,
+      "สัปดาห์นี้พัก (วัน)": `${s.thisWeekRestDays}/2`,
+      "สัปดาห์นี้ขาดค้างแก้ (วัน)": s.thisWeekAbsentDays,
       "สถานะสัปดาห์นี้":
         s.thisWeekStatus === "PASSED"
-          ? "ผ่าน (≥ 3 วัน)"
+          ? "ผ่าน (ครบ 3/3 วัน • ไม่มีวันขาด)"
           : s.thisWeekStatus === "FAILED"
-          ? "ตกเกณฑ์ (< 3 วัน)"
+          ? s.thisWeekAbsentDays > 0
+            ? `ติดขาด ${s.thisWeekAbsentDays} วัน (ต้องแก้ในอาทิตย์นี้!)`
+            : `ตกเกณฑ์ (มา ${s.thisWeekPresentDays}/3 วัน)`
           : "กำลังสะสม",
       "เป้าหมายเทอม (ครั้ง)": 45,
       "มาปกติสะสม (ครั้ง)": s.presentDays,
@@ -200,7 +203,7 @@ export function PrintableNoticeModal({
 
           {/* Notice description */}
           <div className="my-4 text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent print:border-none print:p-0">
-            <strong>คำชี้แจง:</strong> ตามระเบียบว่าด้วยการวัดและประเมินผลกิจกรรมพัฒนาผู้เรียน นักเรียนทุกคนใน 1 ภาคเรียนต้องเข้าร่วมกิจกรรมหน้าเสาธงให้ครบอย่างน้อย 45 ครั้ง และภายในแต่ละสัปดาห์ (จันทร์ - ศุกร์) ต้องเข้าแถวไม่น้อยกว่า 3 วัน จึงจะได้รับการตัดสินผลการประเมินเป็น <strong>&ldquo;ผ่าน (ผ)&rdquo;</strong> หากนักเรียนมีรายชื่อปรากฏในเอกสารฉบับนี้ ขอให้ติดต่อครูที่ปรึกษาเพื่อรับมอบหมายกิจกรรมจิตอาสา/บำเพ็ญประโยชน์ชดเชยเวลาเรียนให้ครบตามเกณฑ์ก่อนสิ้นสุดภาคเรียน
+            <strong>คำชี้แจง:</strong> ตามระเบียบว่าด้วยการวัดและประเมินผลกิจกรรมพัฒนาผู้เรียน นักเรียนทุกคนใน 1 ภาคเรียนต้องเข้าร่วมกิจกรรมหน้าเสาธงให้ครบอย่างน้อย 45 ครั้ง โดยกำหนดวันบังคับเข้าแถวคือ <strong>วันจันทร์ • วันอังคาร • วันศุกร์ (3 วัน/สัปดาห์)</strong> และกำหนดให้ <strong>วันพุธ • วันพฤหัสบดี เป็นวันหยุดพักสำหรับผู้มาครบเกณฑ์</strong> หากนักเรียนขาดแถวในวันบังคับ <strong>ต้องสละวันหยุดมาเข้าคลินิกแก้แถวในวันพุธหรือวันพฤหัสบดี (1 วันหยุด ชดเชย 1 วันขาด แบบ FIFO) หรือทำกิจกรรมจิตอาสา</strong> หากพ้นเส้นตายวันอาทิตย์ 23:59 น. (และพ้นรอบคลินิกนัดแก้) จะถูกล็อกสถานะเป็น <strong>&ldquo;ค้างแก้แถวสะสมข้ามสัปดาห์&rdquo;</strong>
           </div>
 
           {/* Table */}
@@ -212,7 +215,7 @@ export function PrintableNoticeModal({
                   <th className="border border-slate-400 px-2 py-1.5 text-center w-24">รหัสประจำตัว</th>
                   <th className="border border-slate-400 px-2.5 py-1.5">ชื่อ - นามสกุล</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-center w-16">ห้อง</th>
-                  <th className="border border-slate-400 px-2 py-1.5 text-center w-24">สัปดาห์นี้ (≥3 วัน)</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-center w-32">สัปดาห์นี้ (มา 3 • พัก 2 • ห้ามขาด)</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-center w-20">มาสะสม (ครั้ง)</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-center w-20">แก้แล้ว (ครั้ง)</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-center w-24">ยอดสุทธิ (เป้า 45)</th>
@@ -237,12 +240,18 @@ export function PrintableNoticeModal({
                       <td className="border border-slate-300 px-2.5 py-1.5 font-medium">{s.fullName}</td>
                       <td className="border border-slate-300 px-2 py-1.5 text-center">{s.classroom}</td>
                       <td className="border border-slate-300 px-2 py-1.5 text-center">
-                        {s.thisWeekStatus === "PASSED" ? (
-                          <span className="text-emerald-700 font-semibold">ผ่าน ({s.thisWeekPresentDays}/3 วัน)</span>
-                        ) : s.thisWeekStatus === "FAILED" ? (
-                          <span className="text-rose-600 font-semibold">ตกเกณฑ์ ({s.thisWeekPresentDays}/3 วัน)</span>
+                        {s.graceMakeupAbsenceCount > 0 ? (
+                          <span className="text-amber-700 font-semibold">
+                            รอนัดแก้ พ.-พฤ. ({s.graceMakeupAbsenceCount} วัน)
+                          </span>
+                        ) : s.thisWeekStatus === "PASSED" ? (
+                          <span className="text-emerald-700 font-semibold">
+                            ผ่าน ({s.thisWeekPresentDays}/3 วัน)
+                          </span>
                         ) : (
-                          <span className="text-amber-600 font-medium">สะสม ({s.thisWeekPresentDays}/3 วัน)</span>
+                          <span className="text-sky-700 font-medium">
+                            กำลังสะสม ({s.thisWeekPresentDays}/3 วัน)
+                          </span>
                         )}
                       </td>
                       <td className="border border-slate-300 px-2 py-1.5 text-center">
@@ -258,10 +267,16 @@ export function PrintableNoticeModal({
                         {s.remainingDeficitDays > 0 ? `${s.remainingDeficitDays} ครั้ง` : "-"}
                       </td>
                       <td className="border border-slate-300 px-2.5 py-1.5 text-center">
-                        {s.isCompletedSemester && s.thisWeekStatus !== "FAILED" ? (
-                          <span className="text-emerald-700 font-semibold">ผ่านเกณฑ์</span>
+                        {s.overdueAbsenceCount > 0 ? (
+                          <span className="text-red-600 font-bold">
+                            ค้างข้ามสัปดาห์ ({s.overdueAbsenceCount})
+                          </span>
+                        ) : s.graceMakeupAbsenceCount > 0 ? (
+                          <span className="text-amber-700 font-semibold">
+                            รอนัดแก้รอบนี้
+                          </span>
                         ) : (
-                          <span className="text-red-600 font-semibold">ต้องแก้แถว</span>
+                          <span className="text-emerald-700 font-semibold">ปกติ</span>
                         )}
                       </td>
                     </tr>
