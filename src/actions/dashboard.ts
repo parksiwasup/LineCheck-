@@ -16,6 +16,32 @@ export type WeeklyTrendItem = {
   attendanceRate: number;
 };
 
+export interface ClassroomDetailStudent {
+  id: string;
+  studentId: string;
+  fullName: string;
+  totalDays: number;
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  leaveDays: number;
+  rawRate: number;
+  effectiveRate: number;
+  deficitDays: number;
+  approvedRemedialCount: number;
+  pendingRemedialCount: number;
+  isCompliant: boolean;
+}
+
+export interface ClassroomSummaryItem {
+  classroom: string;
+  totalStudents: number;
+  averageRate: number;
+  deficitCount: number;
+  compliantCount: number;
+  students: ClassroomDetailStudent[];
+}
+
 export interface DashboardAnalyticsData {
   summary: {
     totalStudents: number;
@@ -36,12 +62,7 @@ export interface DashboardAnalyticsData {
     value: number;
     color: string;
   }[];
-  classroomSummary: {
-    classroom: string;
-    totalStudents: number;
-    averageRate: number;
-    deficitCount: number;
-  }[];
+  classroomSummary: ClassroomSummaryItem[];
   recentRemedials: {
     id: string;
     studentName: string;
@@ -91,14 +112,10 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     };
 
     current.total += 1;
-    if (r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.EXEMPTION) {
-      current.present += 1;
-    } else if (r.status === AttendanceStatus.LATE) {
-      current.late += 1;
-    } else if (r.status === AttendanceStatus.ABSENT) {
+    if (r.status === AttendanceStatus.ABSENT) {
       current.absent += 1;
-    } else if (r.status === AttendanceStatus.LEAVE) {
-      current.leave += 1;
+    } else {
+      current.present += 1;
     }
     dateMap.set(dIso, current);
   }
@@ -114,10 +131,9 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     total: 0,
   };
 
-  const todayAttended = latestCounts.present + latestCounts.late;
   const todayAttendanceRate =
     latestCounts.total > 0
-      ? Math.round((todayAttended / latestCounts.total) * 1000) / 10
+      ? Math.round((latestCounts.present / latestCounts.total) * 1000) / 10
       : 0;
 
   // Weekly trend (last 7 school days)
@@ -128,15 +144,15 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     const dateObj = new Date(y, m - 1, d);
     const rate =
       item.total > 0
-        ? Math.round(((item.present + item.late) / item.total) * 1000) / 10
+        ? Math.round((item.present / item.total) * 1000) / 10
         : 0;
     return {
       dateIso: dIso,
       dateLabel: format(dateObj, "d MMM", { locale: th }),
       present: item.present,
-      late: item.late,
+      late: 0,
       absent: item.absent,
-      leave: item.leave,
+      leave: 0,
       attendanceRate: rate,
     };
   });
@@ -150,17 +166,25 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
 
   const classroomAgg = new Map<
     string,
-    { totalStudents: number; sumRate: number; deficitCount: number }
+    {
+      totalStudents: number;
+      sumRate: number;
+      deficitCount: number;
+      compliantCount: number;
+      students: ClassroomDetailStudent[];
+    }
   >();
 
   for (const s of students) {
     const total = s.attendanceRecords.length;
-    const baseAttended = s.attendanceRecords.filter(
-      (r) =>
-        r.status === AttendanceStatus.PRESENT ||
-        r.status === AttendanceStatus.LATE ||
-        r.status === AttendanceStatus.EXEMPTION
+    const presentCount = s.attendanceRecords.filter(
+      (r) => r.status !== AttendanceStatus.ABSENT
     ).length;
+    const absentCount = s.attendanceRecords.filter(
+      (r) => r.status === AttendanceStatus.ABSENT
+    ).length;
+
+    const baseAttended = presentCount;
 
     const approvedForStudent = s.remedialRecords.filter(
       (rem) => rem.status === RemedialStatus.APPROVED
@@ -175,6 +199,8 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     const rawRate = total > 0 ? (baseAttended / total) * 100 : 100;
     const effectiveAttended = Math.min(total, baseAttended + approvedForStudent);
     const effectiveRate = total > 0 ? (effectiveAttended / total) * 100 : 100;
+    const isCompliant = effectiveRate >= 80;
+    const deficitDays = Math.max(0, Math.ceil(total * 0.8) - effectiveAttended);
 
     if (rawRate >= 80) {
       compliantStandardCount += 1;
@@ -188,12 +214,35 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
       totalStudents: 0,
       sumRate: 0,
       deficitCount: 0,
+      compliantCount: 0,
+      students: [],
     };
+
     cStat.totalStudents += 1;
     cStat.sumRate += effectiveRate;
-    if (effectiveRate < 80) {
+    if (isCompliant) {
+      cStat.compliantCount += 1;
+    } else {
       cStat.deficitCount += 1;
     }
+
+    cStat.students.push({
+      id: s.id,
+      studentId: s.studentId,
+      fullName: `${s.title}${s.firstName} ${s.lastName}`,
+      totalDays: total,
+      presentDays: presentCount,
+      lateDays: 0,
+      absentDays: absentCount,
+      leaveDays: 0,
+      rawRate: Math.round(rawRate * 10) / 10,
+      effectiveRate: Math.round(effectiveRate * 10) / 10,
+      deficitDays,
+      approvedRemedialCount: approvedForStudent,
+      pendingRemedialCount: pendingForStudent,
+      isCompliant,
+    });
+
     classroomAgg.set(s.classroom, cStat);
   }
 
@@ -228,6 +277,8 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
           ? Math.round((stat.sumRate / stat.totalStudents) * 10) / 10
           : 100,
       deficitCount: stat.deficitCount,
+      compliantCount: stat.compliantCount,
+      students: stat.students,
     })
   );
 

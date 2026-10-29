@@ -32,8 +32,16 @@ import {
   School,
   Box,
   Sparkles,
+  Download,
+  ChevronRight,
+  Search,
+  Award,
+  ExternalLink,
 } from "lucide-react";
-import type { DashboardAnalyticsData } from "@/actions/dashboard";
+import { useRouter } from "next/navigation";
+import { useAttendanceStore } from "@/store/use-attendance-store";
+import * as XLSX from "xlsx";
+import type { DashboardAnalyticsData, ClassroomSummaryItem } from "@/actions/dashboard";
 import { cn } from "@/lib/utils";
 import { ThreeDAttendanceChart } from "./charts/three-d-attendance-chart";
 import { ThreeDDonutChart } from "./charts/three-d-donut-chart";
@@ -46,6 +54,14 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface DashboardClientProps {
   data: DashboardAnalyticsData;
@@ -59,6 +75,34 @@ export function DashboardClient({ data }: DashboardClientProps) {
     classroomSummary,
     recentRemedials,
   } = data;
+
+  const router = useRouter();
+  const { setSelectedClassroom, setRemedialClassroomFilter } = useAttendanceStore();
+  const [selectedClassroomDetail, setSelectedClassroomDetail] =
+    React.useState<ClassroomSummaryItem | null>(null);
+  const [classroomStudentFilter, setClassroomStudentFilter] =
+    React.useState<"ALL" | "DEFICIT" | "COMPLIANT">("ALL");
+  const [classroomStudentSearch, setClassroomStudentSearch] =
+    React.useState("");
+
+  const filteredModalStudents = React.useMemo(() => {
+    if (!selectedClassroomDetail) return [];
+    return selectedClassroomDetail.students.filter((st) => {
+      const matchSearch =
+        !classroomStudentSearch.trim() ||
+        st.studentId.toLowerCase().includes(classroomStudentSearch.toLowerCase()) ||
+        st.fullName.toLowerCase().includes(classroomStudentSearch.toLowerCase());
+
+      const matchFilter =
+        classroomStudentFilter === "ALL"
+          ? true
+          : classroomStudentFilter === "DEFICIT"
+          ? !st.isCompliant
+          : st.isCompliant;
+
+      return matchSearch && matchFilter;
+    });
+  }, [selectedClassroomDetail, classroomStudentFilter, classroomStudentSearch]);
 
   const [chartMode, setChartMode] = React.useState<"3d" | "2d">("3d");
 
@@ -77,36 +121,106 @@ export function DashboardClient({ data }: DashboardClientProps) {
     localStorage.setItem("linecheck-chart-mode", mode);
   };
 
+  const handleExportDashboardExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Classroom Summary
+    const classData = classroomSummary.map((c, idx) => ({
+      "ลำดับ": idx + 1,
+      "ห้องเรียน": c.classroom,
+      "จำนวนนักเรียนทั้งหมด (คน)": c.totalStudents,
+      "อัตราการเข้าแถวเฉลี่ย (%)": `${c.averageRate.toFixed(1)}%`,
+      "นักเรียนต่ำกว่าเกณฑ์ 80% (คน)": c.deficitCount,
+    }));
+    const ws1 = XLSX.utils.json_to_sheet(classData);
+    ws1["!cols"] = [{ wch: 6 }, { wch: 14 }, { wch: 26 }, { wch: 24 }, { wch: 28 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "ClassroomSummary");
+
+    // Sheet 2: Weekly Trend
+    const trendData = weeklyTrend.map((w, idx) => ({
+      "ลำดับ": idx + 1,
+      "วันที่": w.dateLabel,
+      "อัตราการเข้าแถว (%)": `${w.attendanceRate.toFixed(1)}%`,
+      "มาเข้าแถว (คน)": w.present,
+      "ขาดแถว (คน)": w.absent,
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(trendData);
+    ws2["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "WeeklyTrend");
+
+    // Sheet 3: Executive Stats
+    const execData = [
+      { "รายการ": "จำนวนนักเรียนทั้งหมดในระบบ", "ค่าสถิติ": `${summary.totalStudents} คน` },
+      { "รายการ": "อัตราการเข้าแถวประจำวันล่าสุด", "ค่าสถิติ": `${summary.todayAttendanceRate.toFixed(1)}%` },
+      { "รายการ": "ยอดมาเข้าแถววันนี้", "ค่าสถิติ": `${summary.todayPresent} คน` },
+      { "รายการ": "ยอดขาดแถววันนี้", "ค่าสถิติ": `${summary.todayAbsent} คน` },
+      { "รายการ": "นักเรียนที่มีเวลาเข้าแถวต่ำกว่าเกณฑ์ (< 80%)", "ค่าสถิติ": `${summary.deficitStudentCount} คน` },
+      { "รายการ": "กิจกรรมแก้แถวรอการอนุมัติ", "ค่าสถิติ": `${summary.pendingRemedialCount} รายการ` },
+      { "รายการ": "กิจกรรมแก้แถวที่อนุมัติแล้ว", "ค่าสถิติ": `${summary.approvedRemedialCount} รายการ` },
+    ];
+    const ws3 = XLSX.utils.json_to_sheet(execData);
+    ws3["!cols"] = [{ wch: 45 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "ExecutiveSummary");
+
+    const fileName = `รายงานสถิติการเข้าแถวผู้บริหาร_${format(new Date(), "yyyyMMdd")}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
   return (
     <div className="space-y-6">
       {/* Hero Banner / Quick Navigation */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight">
-              แดชบอร์ดภาพรวมสถิติการเข้าแถว (Statistics Dashboard)
-            </h1>
-            <Badge variant="default" className="text-xs">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between rounded-3xl border border-border/80 bg-card/60 p-5 sm:p-6 backdrop-blur-sm shadow-xs">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary border border-primary/20">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Real-time Overview
-            </Badge>
+            </span>
+            <span className="text-xs text-muted-foreground font-medium">
+              อัปเดตสถิติประจำวัน
+            </span>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
+
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-foreground">
+            แดชบอร์ดภาพรวมสถิติการเข้าแถว
+          </h1>
+
+          <p className="text-xs sm:text-sm text-muted-foreground max-w-2xl">
             สรุปอัตราการเข้าแถวประจำวัน แนวโน้มรายสัปดาห์ และสัดส่วนนักเรียนที่ผ่านเกณฑ์เทียบกับผู้ที่ต้องแก้แถว
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Button asChild variant="outline">
+        {/* Action Buttons Group */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0 pt-1 lg:pt-0">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleExportDashboardExcel}
+            className="h-10 rounded-xl border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 text-xs font-semibold gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <Download className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span>ส่งออกรายงาน Excel</span>
+          </Button>
+
+          <Button
+            asChild
+            variant="outline"
+            className="h-10 rounded-xl border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 text-xs font-semibold gap-1.5 shadow-2xs"
+          >
             <Link href="/attendance/remedial">
-              <ShieldAlert className="h-4 w-4 text-rose-500" />
+              <ShieldAlert className="h-4 w-4 shrink-0 text-rose-500" />
               <span>จัดการแก้แถว ({summary.deficitStudentCount})</span>
             </Link>
           </Button>
-          <Button asChild className="shadow-md">
+
+          <Button
+            asChild
+            className="h-10 rounded-xl px-4 text-xs sm:text-sm font-semibold shadow-md gap-2"
+          >
             <Link href="/attendance/check">
-              <ClipboardCheck className="h-4 w-4" />
+              <ClipboardCheck className="h-4 w-4 shrink-0" />
               <span>ไปหน้าเช็คชื่อประจำวัน</span>
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-3.5 w-3.5 shrink-0" />
             </Link>
           </Button>
         </div>
@@ -157,8 +271,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
                   {summary.todayAttendanceRate}%
                 </p>
                 <p className="text-xs text-muted-foreground mt-1.5">
-                  มา {summary.todayPresent} • สาย {summary.todayLate} • ขาด{" "}
-                  {summary.todayAbsent} • ลา {summary.todayLeave}
+                  มาเข้าแถว {summary.todayPresent} คน • ขาดแถว {summary.todayAbsent} คน
                 </p>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
@@ -300,8 +413,8 @@ export function DashboardClient({ data }: DashboardClientProps) {
             </div>
             <CardDescription>
               {chartMode === "3d"
-                ? "มุมมอง 3D เสาทรงกระบอกซ้อนชั้น มา/สาย/ลา/ขาด พร้อมเส้นเรซิ่นเรืองแสงบอกอัตราเข้าแถว (%)"
-                : "เปรียบเทียบจำนวนนักเรียนที่มา สาย ขาด และเส้นอัตราการเข้าแถว (%) ในแต่ละวัน"}
+                ? "มุมมอง 3D เสาทรงกระบอกซ้อนชั้น มา/ขาด พร้อมเส้นเรซิ่นเรืองแสงบอกอัตราเข้าแถว (%)"
+                : "เปรียบเทียบจำนวนนักเรียนที่มาเข้าแถว ขาดแถว และเส้นอัตราการเข้าแถว (%) ในแต่ละวัน"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -357,23 +470,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
                       stackId="a"
                       fill="#10b981"
                       radius={[0, 0, 4, 4]}
-                      barSize={26}
-                    />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="late"
-                      name="สาย (คน)"
-                      stackId="a"
-                      fill="#f59e0b"
-                      barSize={26}
-                    />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="leave"
-                      name="ลา (คน)"
-                      stackId="a"
-                      fill="#0ea5e9"
-                      barSize={26}
+                      barSize={28}
                     />
                     <Bar
                       yAxisId="left"
@@ -382,7 +479,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
                       stackId="a"
                       fill="#f43f5e"
                       radius={[4, 4, 0, 0]}
-                      barSize={26}
+                      barSize={28}
                     />
                     <Line
                       yAxisId="right"
@@ -496,47 +593,68 @@ export function DashboardClient({ data }: DashboardClientProps) {
         {/* Classroom Summary */}
         <Card className="lg:col-span-5">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <School className="h-5 w-5 text-primary" />
-              <CardTitle className="text-base">
-                สรุปสถิติแยกตามห้องเรียน
-              </CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <School className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">
+                  สรุปสถิติแยกตามห้องเรียน
+                </CardTitle>
+              </div>
+              <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                คลิกดูรายละเอียดได้
+              </Badge>
             </div>
             <CardDescription>
-              ค่าเฉลี่ยอัตราการเข้าแถวและจำนวนนักเรียนที่ต้องแก้แถวรายห้อง
+              ค่าเฉลี่ยอัตราการเข้าแถวและจำนวนนักเรียนที่ต้องแก้แถวรายห้อง (คลิกที่ห้องเพื่อดูรายชื่อนักเรียน)
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2.5">
             {classroomSummary.map((room) => (
               <div
                 key={room.classroom}
-                className="flex items-center justify-between rounded-xl border border-border/70 bg-muted/20 p-3.5"
+                onClick={() => {
+                  setSelectedClassroomDetail(room);
+                  setClassroomStudentFilter("ALL");
+                  setClassroomStudentSearch("");
+                }}
+                className="group flex items-center justify-between rounded-2xl border border-border/70 bg-card hover:bg-muted/40 hover:border-primary/50 p-3.5 transition-all duration-200 cursor-pointer shadow-2xs hover:shadow-md"
               >
-                <div>
+                <div className="flex-1 min-w-0 pr-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm">
+                    <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">
                       ห้อง {room.classroom}
                     </span>
-                    <Badge variant="secondary" className="text-[11px]">
+                    <Badge variant="secondary" className="text-[11px] font-mono">
                       {room.totalStudents} คน
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    อัตราการเข้าแถวเฉลี่ย{" "}
-                    <span className="font-semibold text-foreground">
-                      {room.averageRate}%
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                    <span>
+                      อัตราการเข้าแถวเฉลี่ย{" "}
+                      <b
+                        className={cn(
+                          room.averageRate >= 80
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-rose-600 dark:text-rose-400"
+                        )}
+                      >
+                        {room.averageRate}%
+                      </b>
                     </span>
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   {room.deficitCount > 0 ? (
-                    <Badge variant="destructive">
+                    <Badge variant="destructive" className="text-xs">
                       ต้องแก้แถว {room.deficitCount} คน
                     </Badge>
                   ) : (
-                    <Badge variant="success">ผ่านเกณฑ์ครบทุกคน</Badge>
+                    <Badge variant="success" className="text-xs">
+                      ผ่านเกณฑ์ครบทุกคน
+                    </Badge>
                   )}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
               </div>
             ))}
@@ -608,6 +726,264 @@ export function DashboardClient({ data }: DashboardClientProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Classroom Detail Modal */}
+      <Dialog
+        open={!!selectedClassroomDetail}
+        onOpenChange={(open) => {
+          if (!open) setSelectedClassroomDetail(null);
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-3xl">
+          {/* Modal Header */}
+          <div className="p-5 sm:p-6 pb-4 border-b border-border/70 bg-muted/20">
+            <DialogHeader className="space-y-1">
+              <div className="flex items-center gap-3">
+                <div className="h-11 w-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0 shadow-2xs">
+                  <School className="h-6 w-6" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg sm:text-xl font-bold flex items-center gap-2">
+                    <span>รายละเอียดสถิติและการเข้าแถว ห้อง {selectedClassroomDetail?.classroom}</span>
+                    <Badge variant="secondary" className="text-xs font-mono">
+                      {selectedClassroomDetail?.totalStudents} คน
+                    </Badge>
+                  </DialogTitle>
+                  <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                    รายชื่อนักเรียนและอัตราการเข้าแถวรายบุคคลของห้อง {selectedClassroomDetail?.classroom}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {/* Stat Counters Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4">
+              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
+                <p className="text-[11px] text-muted-foreground font-medium">นักเรียนทั้งหมด</p>
+                <p className="text-lg font-bold mt-0.5 text-foreground">
+                  {selectedClassroomDetail?.totalStudents} คน
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
+                <p className="text-[11px] text-muted-foreground font-medium">เข้าแถวเฉลี่ย</p>
+                <p
+                  className={cn(
+                    "text-lg font-bold mt-0.5",
+                    (selectedClassroomDetail?.averageRate ?? 0) >= 80
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  )}
+                >
+                  {selectedClassroomDetail?.averageRate}%
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
+                <p className="text-[11px] text-muted-foreground font-medium">ผ่านเกณฑ์ (≥ 80%)</p>
+                <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {selectedClassroomDetail?.compliantCount} คน
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
+                <p className="text-[11px] text-muted-foreground font-medium">ต้องแก้แถว (&lt; 80%)</p>
+                <p className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                  {selectedClassroomDetail?.deficitCount} คน
+                </p>
+              </div>
+            </div>
+
+            {/* Search & Filter Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mt-4">
+              <div className="flex items-center gap-1 bg-background p-1 rounded-xl border border-border text-xs">
+                <button
+                  type="button"
+                  onClick={() => setClassroomStudentFilter("ALL")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer",
+                    classroomStudentFilter === "ALL"
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  ทั้งหมด ({selectedClassroomDetail?.totalStudents})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClassroomStudentFilter("DEFICIT")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer",
+                    classroomStudentFilter === "DEFICIT"
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  ต้องแก้แถว ({selectedClassroomDetail?.deficitCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClassroomStudentFilter("COMPLIANT")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer",
+                    classroomStudentFilter === "COMPLIANT"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  ผ่านเกณฑ์ ({selectedClassroomDetail?.compliantCount})
+                </button>
+              </div>
+
+              <div className="relative flex-1 sm:max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="ค้นหาชื่อ หรือเลขประจำตัว..."
+                  value={classroomStudentSearch}
+                  onChange={(e) => setClassroomStudentSearch(e.target.value)}
+                  className="pl-8.5 h-9 text-xs rounded-xl"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Student List (Scrollable) */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2.5">
+            {filteredModalStudents.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground text-sm">
+                ไม่พบนักเรียนตามเงื่อนไขที่เลือก
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredModalStudents.map((st) => (
+                  <div
+                    key={st.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-2xs"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                          {st.studentId}
+                        </span>
+                        <span className="font-bold text-sm text-foreground">
+                          {st.fullName}
+                        </span>
+                        {st.isCompliant ? (
+                          <Badge variant="success" className="text-[10px] py-0">
+                            ผ่านเกณฑ์ (ผ.)
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="text-[10px] py-0">
+                            ต้องแก้ {st.deficitDays} วัน
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          มา {st.presentDays} วัน
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="h-2 w-2 rounded-full bg-rose-500" />
+                          ขาด {st.absentDays} วัน
+                        </span>
+                        {st.approvedRemedialCount > 0 && (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                            (แก้แล้ว +{st.approvedRemedialCount} วัน)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress Bar & Percent */}
+                    <div className="w-full sm:w-44 space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground text-[11px]">อัตราสุทธิ</span>
+                        <span
+                          className={cn(
+                            "font-bold",
+                            st.effectiveRate >= 80
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          )}
+                        >
+                          {st.effectiveRate}%
+                        </span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            st.effectiveRate >= 80 ? "bg-emerald-500" : "bg-rose-500"
+                          )}
+                          style={{ width: `${Math.min(100, st.effectiveRate)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Modal Footer Quick Actions */}
+          <div className="p-4 border-t border-border/70 bg-muted/20 flex flex-wrap items-center justify-between gap-2.5">
+            <span className="text-xs text-muted-foreground">
+              ทางลัดจัดการห้อง {selectedClassroomDetail?.classroom}:
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedClassroomDetail) {
+                    setSelectedClassroom(selectedClassroomDetail.classroom);
+                    router.push("/attendance/check");
+                  }
+                }}
+                className="text-xs h-8 rounded-xl"
+              >
+                <ClipboardCheck className="h-3.5 w-3.5 mr-1 text-primary" />
+                <span>เช็คชื่อห้องนี้</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedClassroomDetail) {
+                    setRemedialClassroomFilter(selectedClassroomDetail.classroom);
+                    router.push("/attendance/remedial");
+                  }
+                }}
+                className="text-xs h-8 rounded-xl"
+              >
+                <ShieldAlert className="h-3.5 w-3.5 mr-1 text-amber-500" />
+                <span>แก้แถวห้องนี้</span>
+              </Button>
+
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  if (selectedClassroomDetail) {
+                    router.push(
+                      `/grades?classroom=${encodeURIComponent(
+                        selectedClassroomDetail.classroom
+                      )}`
+                    );
+                  }
+                }}
+                className="text-xs h-8 rounded-xl"
+              >
+                <Award className="h-3.5 w-3.5 mr-1" />
+                <span>ตัดเกรดห้องนี้ (ผ./มผ.)</span>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

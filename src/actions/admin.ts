@@ -418,3 +418,219 @@ export async function deleteAttendanceByDateAction(
     };
   }
 }
+
+export interface BulkStudentRowInput {
+  studentId: string;
+  title: string;
+  firstName: string;
+  lastName: string;
+  classroom: string;
+  status?: "ACTIVE" | "INACTIVE";
+}
+
+export interface BulkImportResult {
+  success: boolean;
+  totalParsed: number;
+  importedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  errors: Array<{ row: number; studentId?: string; reason: string }>;
+  message: string;
+}
+
+export async function bulkImportStudentsAction(
+  rows: BulkStudentRowInput[],
+  options?: {
+    mode?: "UPSERT" | "SKIP_EXISTING";
+    defaultClassroom?: string;
+  }
+): Promise<BulkImportResult> {
+  const mode = options?.mode || "UPSERT";
+  const defaultClassroom = options?.defaultClassroom?.trim() || "";
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      success: false,
+      totalParsed: 0,
+      importedCount: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      errors: [{ row: 0, reason: "ไม่มีข้อมูลนักเรียนในไฟล์ หรือรูปแบบข้อมูลไม่ถูกต้อง" }],
+      message: "ไม่พบข้อมูลนักเรียนที่สามารถนำเข้าได้",
+    };
+  }
+
+  const errors: Array<{ row: number; studentId?: string; reason: string }> = [];
+  const validRows: Array<{
+    studentId: string;
+    title: string;
+    firstName: string;
+    lastName: string;
+    classroom: string;
+    status: StudentStatus;
+    rowIndex: number;
+  }> = [];
+
+  const seenIdsInBatch = new Set<string>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i];
+    const rowIndex = i + 1;
+
+    const studentId = String(raw.studentId || "").trim();
+    let title = String(raw.title || "").trim();
+    let firstName = String(raw.firstName || "").trim();
+    let lastName = String(raw.lastName || "").trim();
+    const classroom = (String(raw.classroom || "").trim()) || defaultClassroom;
+    const rawStatus = String(raw.status || "").trim().toUpperCase();
+    const status: StudentStatus =
+      rawStatus === "INACTIVE" || rawStatus === "พักการเรียน" || rawStatus === "ย้ายออก"
+        ? StudentStatus.INACTIVE
+        : StudentStatus.ACTIVE;
+
+    if (!studentId) {
+      errors.push({ row: rowIndex, reason: "ไม่พบรหัสนักเรียน (studentId ว่างเปล่า)" });
+      continue;
+    }
+    if (seenIdsInBatch.has(studentId)) {
+      errors.push({
+        row: rowIndex,
+        studentId,
+        reason: `รหัสนักเรียน ${studentId} ซ้ำกับรายการก่อนหน้าในไฟล์เดียวกัน`,
+      });
+      continue;
+    }
+
+    // Auto extract title if embedded in firstName e.g. "นายสมชาย" or "เด็กชายวิชัย"
+    if (!title && firstName) {
+      const prefixes = ["เด็กชาย", "เด็กหญิง", "ด.ช.", "ด.ญ.", "นาย", "นางสาว", "น.ส.", "นาง"];
+      for (const p of prefixes) {
+        if (firstName.startsWith(p)) {
+          title = p;
+          firstName = firstName.substring(p.length).trim();
+          break;
+        }
+      }
+    }
+
+    if (!firstName) {
+      errors.push({ row: rowIndex, studentId, reason: "ไม่พบชื่อจริงของนักเรียน" });
+      continue;
+    }
+    if (!classroom) {
+      errors.push({
+        row: rowIndex,
+        studentId,
+        reason: "ไม่พบข้อมูลห้องเรียน (เช่น ม.4/1)",
+      });
+      continue;
+    }
+
+    seenIdsInBatch.add(studentId);
+    validRows.push({
+      studentId,
+      title: title || "นาย",
+      firstName,
+      lastName: lastName || "-",
+      classroom,
+      status,
+      rowIndex,
+    });
+  }
+
+  if (validRows.length === 0) {
+    return {
+      success: false,
+      totalParsed: rows.length,
+      importedCount: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      errors,
+      message: "ไม่พบรายการนักเรียนที่ข้อมูลครบถ้วนสำหรับนำเข้า",
+    };
+  }
+
+  try {
+    const studentIds = validRows.map((r) => r.studentId);
+    const existingStudents = await prisma.student.findMany({
+      where: { studentId: { in: studentIds } },
+      select: { id: true, studentId: true },
+    });
+
+    const existingMap = new Map(existingStudents.map((s) => [s.studentId, s.id]));
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of validRows) {
+        const existingId = existingMap.get(row.studentId);
+
+        if (existingId) {
+          if (mode === "SKIP_EXISTING") {
+            skippedCount++;
+            continue;
+          }
+          await tx.student.update({
+            where: { id: existingId },
+            data: {
+              title: row.title,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              classroom: row.classroom,
+              status: row.status,
+            },
+          });
+          updatedCount++;
+        } else {
+          await tx.student.create({
+            data: {
+              studentId: row.studentId,
+              title: row.title,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              classroom: row.classroom,
+              status: row.status,
+            },
+          });
+          createdCount++;
+        }
+      }
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/attendance/check");
+    revalidatePath("/attendance/remedial");
+    revalidatePath("/dashboard");
+
+    const importedCount = createdCount + updatedCount;
+    return {
+      success: true,
+      totalParsed: rows.length,
+      importedCount,
+      createdCount,
+      updatedCount,
+      skippedCount,
+      errors,
+      message: `นำเข้าข้อมูลนักเรียนสำเร็จ ${importedCount} รายการ (เพิ่มใหม่ ${createdCount} คน, อัปเดต ${updatedCount} คน${
+        skippedCount > 0 ? `, ข้าม ${skippedCount} คน` : ""
+      })`,
+    };
+  } catch (error) {
+    console.error("Bulk import error:", error);
+    return {
+      success: false,
+      totalParsed: rows.length,
+      importedCount: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      errors: [{ row: 0, reason: (error as Error).message || "เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล" }],
+      message: "เกิดข้อผิดพลาดในการบันทึกข้อมูลเข้าฐานข้อมูล MySQL",
+    };
+  }
+}

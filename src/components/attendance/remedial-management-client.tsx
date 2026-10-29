@@ -35,7 +35,14 @@ import {
   ChevronRight,
   Loader2,
   ExternalLink,
+  Printer,
+  Download,
+  Camera,
+  Image as ImageIcon,
+  Target,
 } from "lucide-react";
+import * as XLSX from "xlsx";
+import { PrintableNoticeModal } from "./printable-notice-modal";
 import {
   submitRemedialTaskAction,
   reviewRemedialTaskAction,
@@ -120,17 +127,32 @@ interface RemedialManagementClientProps {
     deficitStudents: StudentDeficitReportItem[];
     allRemedialLogs: RemedialLogItem[];
     stats: {
+      targetSemesterDays: number;
+      totalStudents: number;
+      completed45Count: number;
+      incompleted45Count: number;
+      weeklyPassedCount: number;
+      weeklyFailedCount: number;
+      weeklyInProgressCount: number;
+      pendingApprovalCount: number;
+      remediedSuccessCount: number;
       totalBelowStandardRaw: number;
       stillDeficitCount: number;
-      remediedSuccessCount: number;
-      pendingApprovalCount: number;
     };
   };
+  currentUser?: {
+    id: string;
+    name?: string | null;
+    email?: string | null;
+    role: "TEACHER" | "ADMIN";
+    classrooms?: string | null;
+  } | null;
 }
 
 export function RemedialManagementClient({
   classrooms,
   initialReport,
+  currentUser,
 }: RemedialManagementClientProps) {
   const router = useRouter();
   const {
@@ -141,12 +163,134 @@ export function RemedialManagementClient({
     activeRole,
   } = useAttendanceStore();
 
+  const userRole = currentUser?.role ?? activeRole;
+  const teacherRooms = React.useMemo(() => {
+    if (!currentUser?.classrooms) return [];
+    return currentUser.classrooms.split(",").map((c) => c.trim()).filter(Boolean);
+  }, [currentUser?.classrooms]);
+
+  const canApproveStudentRoom = React.useCallback(
+    (room: string) => {
+      if (userRole === "ADMIN") return true;
+      if (teacherRooms.length === 0) return true;
+      return teacherRooms.includes(room);
+    },
+    [userRole, teacherRooms]
+  );
+
   const [isPending, startTransition] = React.useTransition();
+  const [statusFilter, setStatusFilter] = React.useState<
+    "ALL" | "WEEKLY_FAILED" | "INCOMPLETE_45" | "PENDING" | "COMPLETED_45"
+  >("ALL");
   const [selectedStudent, setSelectedStudent] =
     React.useState<StudentDeficitReportItem | null>(
       initialReport.deficitStudents[0] ?? null
     );
   const [isFormDialogOpen, setIsFormDialogOpen] = React.useState(false);
+  const [isPrintNoticeOpen, setIsPrintNoticeOpen] = React.useState(false);
+  const [imagePreview, setImagePreview] = React.useState<string | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = React.useState(false);
+  const proofFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleDirectImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, WebP)");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("ขนาดรูปภาพต้องไม่เกิน 10MB");
+      return;
+    }
+
+    const localPreview = URL.createObjectURL(file);
+    setImagePreview(localPreview);
+    setIsUploadingProof(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok && data.url) {
+        form.setValue("proofUrl", data.url);
+        toast.success("อัปโหลดรูปภาพหลักฐานเรียบร้อยแล้ว");
+      } else {
+        toast.error(data.error || "ไม่สามารถอัปโหลดรูปภาพได้");
+        setImagePreview(null);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ");
+      setImagePreview(null);
+    } finally {
+      setIsUploadingProof(false);
+    }
+  };
+
+  const handleExportDeficitExcel = () => {
+    const exportData = filteredDeficitData.map((s, idx) => ({
+      "ลำดับ": idx + 1,
+      "รหัสนักเรียน": s.studentId,
+      "คำนำหน้า": s.title,
+      "ชื่อจริง": s.firstName,
+      "นามสกุล": s.lastName,
+      "ห้องเรียน": s.classroom,
+      "สัปดาห์นี้มา (วัน)": s.thisWeekPresentDays,
+      "สัปดาห์นี้ขาด (วัน)": s.thisWeekAbsentDays,
+      "สถานะสัปดาห์นี้ (เกณฑ์ ≥ 3 วัน)":
+        s.thisWeekStatus === "PASSED"
+          ? "ผ่านเกณฑ์สัปดาห์ (≥ 3 วัน)"
+          : s.thisWeekStatus === "FAILED"
+          ? "ตกเกณฑ์สัปดาห์ (< 3 วัน)"
+          : "กำลังสะสม",
+      "เป้าหมายเทอม (ครั้ง)": 45,
+      "มาปกติสะสม (ครั้ง)": s.presentDays,
+      "แก้แถวที่อนุมัติ (ครั้ง)": s.approvedRemedialCount,
+      "ยอดสุทธิสะสม (ครั้ง)": s.effectivePresentDays,
+      "ขาดอีก (ครั้ง)": s.remainingDeficitDays,
+      "สถานะเทอม (ครบ 45 ครั้ง)": s.isCompletedSemester
+        ? "ครบเกณฑ์ 45 ครั้งแล้ว"
+        : `ยังขาดอีก ${s.remainingDeficitDays} ครั้ง`,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "AttendanceReport");
+
+    ws["!cols"] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 22 },
+    ];
+
+    const fileName = `รายงานนักเรียนตกเกณฑ์แก้แถว_${remedialClassroomFilter === "ALL" ? "ทุกห้อง" : remedialClassroomFilter}_${format(
+      new Date(),
+      "yyyyMMdd"
+    )}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success("ส่งออกรายงาน Excel สำเร็จ");
+  };
 
   const form = useForm<RemedialFormValues>({
     resolver: zodResolver(remedialFormSchema),
@@ -228,8 +372,8 @@ export function RemedialManagementClient({
           toast.success(res.message, {
             description:
               res.remainingDeficitDays === 0
-                ? "นักเรียนมีเวลาเรียนครบเกณฑ์ 80% แล้ว!"
-                : `ยังต้องแก้แถวเพิ่มอีก ${res.remainingDeficitDays} วันจึงจะครบเกณฑ์ 80%`,
+                ? "นักเรียนเข้าแถวสะสมครบเป้าหมาย 45 ครั้งแล้ว!"
+                : `ยังขาดอีก ${res.remainingDeficitDays} ครั้งจึงจะครบ 45 ครั้ง`,
           });
         } else {
           toast.warning(res.message);
@@ -251,12 +395,25 @@ export function RemedialManagementClient({
         !remedialSearchQuery.trim() ||
         s.studentId.toLowerCase().includes(remedialSearchQuery.toLowerCase()) ||
         s.fullName.toLowerCase().includes(remedialSearchQuery.toLowerCase());
-      return matchClass && matchQuery;
+
+      let matchStatus = true;
+      if (statusFilter === "WEEKLY_FAILED") {
+        matchStatus = s.thisWeekStatus === "FAILED";
+      } else if (statusFilter === "INCOMPLETE_45") {
+        matchStatus = !s.isCompletedSemester;
+      } else if (statusFilter === "PENDING") {
+        matchStatus = s.pendingRemedialCount > 0;
+      } else if (statusFilter === "COMPLETED_45") {
+        matchStatus = s.isCompletedSemester;
+      }
+
+      return matchClass && matchQuery && matchStatus;
     });
   }, [
     initialReport.deficitStudents,
     remedialClassroomFilter,
     remedialSearchQuery,
+    statusFilter,
   ]);
 
   const columns = React.useMemo(
@@ -290,54 +447,91 @@ export function RemedialManagementClient({
             </div>
           ),
         }),
-        columnHelper.accessor("presentDays", {
-          header: "มา / ขาด (วัน)",
-          cell: ({ row }) => (
-            <div className="flex items-center gap-2 text-xs">
-              <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-700 dark:text-emerald-400">
-                มา {row.original.presentDays}/{row.original.totalDays}
-              </span>
-              <span className="rounded-md bg-rose-500/10 px-2 py-0.5 font-semibold text-rose-600 dark:text-rose-400">
-                ขาด {row.original.absentDays}
-              </span>
-            </div>
-          ),
+        columnHelper.accessor("thisWeekStatus", {
+          header: "สัปดาห์นี้ (เกณฑ์ ≥ 3 วัน)",
+          cell: ({ row }) => {
+            const st = row.original;
+            return (
+              <div className="space-y-1.5 min-w-[130px]">
+                <div className="flex items-center gap-1">
+                  {st.thisWeekDays.map((d) => (
+                    <span
+                      key={d.dateIso}
+                      title={`${d.dayName} (${d.dateIso}): ${
+                        d.status === "PRESENT"
+                          ? "มาเข้าแถว"
+                          : d.status === "ABSENT"
+                          ? "ขาดแถว"
+                          : "ยังไม่ถึงวัน / ยังไม่บันทึก"
+                      }`}
+                      className={cn(
+                        "flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-all",
+                        d.status === "PRESENT"
+                          ? "bg-emerald-500 text-white shadow-xs"
+                          : d.status === "ABSENT"
+                          ? "bg-rose-500 text-white shadow-xs"
+                          : "bg-muted text-muted-foreground border border-border/60"
+                      )}
+                    >
+                      {d.dayLabel}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  {st.thisWeekStatus === "PASSED" ? (
+                    <Badge variant="success" className="text-[10px] py-0 px-1.5 font-medium">
+                      <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                      ผ่าน (มา {st.thisWeekPresentDays}/3 วัน)
+                    </Badge>
+                  ) : st.thisWeekStatus === "FAILED" ? (
+                    <Badge variant="destructive" className="text-[10px] py-0 px-1.5 font-medium">
+                      <AlertTriangle className="h-3 w-3 mr-0.5" />
+                      ตกเกณฑ์ (มา {st.thisWeekPresentDays}/3 วัน)
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-medium text-amber-600 border-amber-400/50 bg-amber-500/10">
+                      <Clock className="h-3 w-3 mr-0.5" />
+                      สะสม (มา {st.thisWeekPresentDays}/3 วัน)
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            );
+          },
         }),
-        columnHelper.accessor("effectiveAttendancePercent", {
+        columnHelper.accessor("effectivePresentDays", {
           header: ({ column }) => (
             <button
               type="button"
               onClick={column.getToggleSortingHandler()}
               className="inline-flex items-center gap-1 font-semibold hover:text-foreground cursor-pointer"
             >
-              <span>% การเข้าแถว (เกณฑ์ 80%)</span>
+              <span>ยอดทั้งเทอม (เป้า 45 ครั้ง)</span>
               <ArrowUpDown className="h-3.5 w-3.5" />
             </button>
           ),
           cell: ({ row }) => {
-            const raw = row.original.rawAttendancePercent;
-            const effective = row.original.effectiveAttendancePercent;
-            const hasOffset = effective > raw;
+            const st = row.original;
             return (
               <div className="w-44 space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span
                     className={cn(
-                      "font-bold",
-                      effective >= 80
+                      "font-bold font-mono",
+                      st.isCompletedSemester
                         ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-rose-600 dark:text-rose-400"
+                        : "text-amber-600 dark:text-amber-400"
                     )}
                   >
-                    {effective}%
+                    {st.effectivePresentDays} / 45 ครั้ง
                   </span>
-                  {hasOffset ? (
-                    <span className="text-[11px] text-sky-600 dark:text-sky-400 font-medium">
-                      (เดิม {raw}% + แก้แล้ว {row.original.approvedRemedialCount} วัน)
+                  {st.isCompletedSemester ? (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      ครบแล้ว 🎉
                     </span>
                   ) : (
-                    <span className="text-[11px] text-muted-foreground">
-                      ต้องแก้เพิ่ม {row.original.remainingDeficitDays} วัน
+                    <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                      ขาดอีก {st.remainingDeficitDays} ครั้ง
                     </span>
                   )}
                 </div>
@@ -345,11 +539,18 @@ export function RemedialManagementClient({
                   <div
                     className={cn(
                       "h-full rounded-full transition-all duration-300",
-                      effective >= 80 ? "bg-emerald-500" : "bg-rose-500"
+                      st.isCompletedSemester ? "bg-emerald-500" : "bg-primary"
                     )}
-                    style={{ width: `${Math.min(100, effective)}%` }}
+                    style={{
+                      width: `${Math.min(100, (st.effectivePresentDays / 45) * 100)}%`,
+                    }}
                   />
                 </div>
+                {st.approvedRemedialCount > 0 && (
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                    (มาปกติ {st.presentDays} + แก้แล้ว {st.approvedRemedialCount} ครั้ง)
+                  </p>
+                )}
               </div>
             );
           },
@@ -357,27 +558,35 @@ export function RemedialManagementClient({
         columnHelper.accessor("remedialOverallStatus", {
           header: "สถานะการแก้แถว",
           cell: ({ row }) => {
-            const st = row.original.remedialOverallStatus;
-            if (st === "REMEDIED") {
+            const st = row.original;
+            if (st.isCompletedSemester && st.thisWeekStatus !== "FAILED") {
               return (
                 <Badge variant="success">
                   <CheckCircle2 className="h-3 w-3" />
-                  แก้แถวผ่านเกณฑ์แล้ว
+                  ครบ 45 ครั้งแล้ว
                 </Badge>
               );
             }
-            if (st === "IN_PROGRESS") {
+            if (st.pendingRemedialCount > 0) {
               return (
                 <Badge variant="warning">
                   <Clock className="h-3 w-3" />
-                  กำลังแก้แถว (รอตรวจ {row.original.pendingRemedialCount})
+                  รอตรวจรับงาน ({st.pendingRemedialCount})
+                </Badge>
+              );
+            }
+            if (st.thisWeekStatus === "FAILED") {
+              return (
+                <Badge variant="destructive">
+                  <AlertTriangle className="h-3 w-3" />
+                  ตกเกณฑ์สัปดาห์นี้
                 </Badge>
               );
             }
             return (
               <Badge variant="destructive">
                 <AlertTriangle className="h-3 w-3" />
-                ต้องแก้แถว ({row.original.remainingDeficitDays} วัน)
+                ต้องแก้แถว ({st.remainingDeficitDays} ครั้ง)
               </Badge>
             );
           },
@@ -432,43 +641,87 @@ export function RemedialManagementClient({
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
               ระบบจัดการแก้กิจกรรมเข้าแถว
             </h1>
-            <Badge variant="destructive" className="text-xs shrink-0">
-              เกณฑ์ขั้นต่ำ 80%
+            <Badge variant="outline" className="text-xs shrink-0 border-primary/40 bg-primary/10 text-primary font-semibold">
+              เป้าหมายเทอม: 45 ครั้ง
+            </Badge>
+            <Badge variant="destructive" className="text-xs shrink-0 font-semibold">
+              เกณฑ์สัปดาห์: จ.-ศ. ต้องครบ ≥ 3 วัน
             </Badge>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            รายชื่อนักเรียนที่มีเวลาเข้าแถวต่ำกว่าเกณฑ์ 80% พร้อมระบบส่งงานจิตอาสาและอนุมัติชดเชยวันขาดแถวอัตโนมัติ
+            ระเบียบกิจกรรมหน้าเสาธง: นักเรียนทุกคนใน 1 เทอมต้องเข้าแถวให้ครบ 45 ครั้ง และภายใน 1 อาทิตย์ (จันทร์ - ศุกร์) ต้องมาให้ครบอย่างน้อย 3 วัน
           </p>
         </div>
 
-        {initialReport.deficitStudents.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Button
-            onClick={() =>
-              handleOpenRemedialModal(
-                selectedStudent ?? initialReport.deficitStudents[0]
-              )
-            }
-            className="w-full sm:w-auto shadow-md shrink-0"
+            type="button"
+            variant="outline"
+            onClick={handleExportDeficitExcel}
+            className="h-9 gap-1.5 text-xs shadow-sm"
           >
-            <FilePlus2 className="h-4 w-4" />
-            <span>บันทึกกิจกรรมแก้แถวใหม่</span>
+            <Download className="h-4 w-4 text-emerald-600" />
+            <span>ส่งออก Excel</span>
           </Button>
-        )}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsPrintNoticeOpen(true)}
+            className="h-9 gap-1.5 text-xs shadow-sm border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+          >
+            <Printer className="h-4 w-4" />
+            <span>พิมพ์ใบแจ้งแก้แถว</span>
+          </Button>
+
+          {initialReport.deficitStudents.length > 0 && (
+            <Button
+              onClick={() =>
+                handleOpenRemedialModal(
+                  selectedStudent ?? initialReport.deficitStudents[0]
+                )
+              }
+              className="w-full sm:w-auto shadow-md shrink-0 h-9 text-xs"
+            >
+              <FilePlus2 className="h-4 w-4" />
+              <span>บันทึกกิจกรรมแก้แถวใหม่</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
-        <Card>
+        <Card className="cursor-pointer transition-all hover:border-amber-400/50" onClick={() => setStatusFilter("INCOMPLETE_45")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                นักเรียนต่ำกว่าเกณฑ์ (&lt; 80%)
+                ยังไม่ครบเป้า 45 ครั้ง
               </p>
-              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1">
-                {initialReport.stats.totalBelowStandardRaw} คน
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-amber-600 dark:text-amber-400">
+                {initialReport.stats.incompleted45Count} คน
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                จากประวัติการเช็คชื่อทั้งหมด
+                ครบ 45 ครั้งแล้ว {initialReport.stats.completed45Count} คน
+              </p>
+            </div>
+            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+              <Target className="h-5 w-5 sm:h-6 sm:w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="cursor-pointer transition-all hover:border-rose-400/50" onClick={() => setStatusFilter("WEEKLY_FAILED")}>
+          <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                สัปดาห์นี้: ตกเกณฑ์ (&lt; 3 วัน)
+              </p>
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-rose-600 dark:text-rose-400">
+                {initialReport.stats.weeklyFailedCount} คน
+              </p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                ผ่านเกณฑ์สัปดาห์ {initialReport.stats.weeklyPassedCount} คน
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
@@ -477,36 +730,17 @@ export function RemedialManagementClient({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer transition-all hover:border-sky-400/50" onClick={() => setStatusFilter("PENDING")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                ยังต้องแก้แถวเพิ่ม
+                รออนุมัติงาน (Pending)
               </p>
-              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-rose-600 dark:text-rose-400">
-                {initialReport.stats.stillDeficitCount} คน
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                เวลาเรียนสุทธิยังไม่ถึง 80%
-              </p>
-            </div>
-            <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
-              <CalendarDays className="h-5 w-5 sm:h-6 sm:w-6" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
-            <div>
-              <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                รออนุมัติ (Pending)
-              </p>
-              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-amber-600 dark:text-amber-400">
+              <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-sky-600 dark:text-sky-400">
                 {initialReport.stats.pendingApprovalCount} รายการ
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                พร้อมให้ครู/ฝ่ายปกครองตรวจ
+                พร้อมให้ครูที่ปรึกษาตรวจรับ
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0">
@@ -515,21 +749,21 @@ export function RemedialManagementClient({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="cursor-pointer transition-all hover:border-emerald-400/50" onClick={() => setStatusFilter("COMPLETED_45")}>
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
-                แก้แถวผ่านเกณฑ์สำเร็จ
+                ผ่านเกณฑ์ 45 ครั้งสมบูรณ์
               </p>
               <p className="text-xl sm:text-2xl font-bold mt-0.5 sm:mt-1 text-emerald-600 dark:text-emerald-400">
-                {initialReport.stats.remediedSuccessCount} คน
+                {initialReport.stats.completed45Count} คน
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                ชดเชยเวลาเรียนครบ ≥ 80%
+                มีเวลาเข้าแถวครบ 45 ครั้ง 🎉
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
-              <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
+              <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </CardContent>
         </Card>
@@ -537,10 +771,10 @@ export function RemedialManagementClient({
 
       {/* Main Content Tabs: Deficit Table (@tanstack/react-table v9) & Remedial Approval Logs */}
       <Tabs defaultValue="deficit-table">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <TabsList>
             <TabsTrigger value="deficit-table">
-              ตารางนักเรียนต่ำกว่าเกณฑ์ ({filteredDeficitData.length})
+              ตารางนักเรียน ({filteredDeficitData.length})
             </TabsTrigger>
             <TabsTrigger value="approval-logs">
               ประวัติและอนุมัติผลกิจกรรมแก้แถว ({initialReport.allRemedialLogs.length})
@@ -549,6 +783,70 @@ export function RemedialManagementClient({
 
           {/* Filter Bar */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Status Filter Chips */}
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setStatusFilter("ALL")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "ALL"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                ทั้งหมด
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("WEEKLY_FAILED")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "WEEKLY_FAILED"
+                    ? "bg-rose-600 text-white"
+                    : "bg-rose-500/10 text-rose-600 hover:bg-rose-500/20"
+                )}
+              >
+                🔴 ตกเกณฑ์สัปดาห์นี้
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("INCOMPLETE_45")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "INCOMPLETE_45"
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20"
+                )}
+              >
+                ⚠️ ยังไม่ครบ 45 ครั้ง
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("PENDING")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "PENDING"
+                    ? "bg-sky-600 text-white"
+                    : "bg-sky-500/10 text-sky-600 hover:bg-sky-500/20"
+                )}
+              >
+                ⏳ รอตรวจ
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("COMPLETED_45")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "COMPLETED_45"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
+                )}
+              >
+                🟢 ครบ 45 ครั้ง
+              </button>
+            </div>
+
             <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1">
               <button
                 type="button"
@@ -579,7 +877,7 @@ export function RemedialManagementClient({
               ))}
             </div>
 
-            <div className="relative w-full sm:w-60">
+            <div className="relative w-full sm:w-52">
               <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="ค้นหารหัส หรือ ชื่อนักเรียน..."
@@ -596,10 +894,10 @@ export function RemedialManagementClient({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">
-                รายชื่อนักเรียนที่มีเวลาเข้าแถวต่ำกว่า 80%
+                รายชื่อนักเรียนและสถานะการเข้าแถว (เป้าหมาย 45 ครั้ง / สัปดาห์ละ ≥ 3 วัน)
               </CardTitle>
               <CardDescription>
-                ตารางแสดงสถิติวันมาเรียน วันขาดแถว เปอร์เซ็นต์เวลาเรียนสุทธิหลังหักลบวันแก้แถวที่อนุมัติแล้ว
+                ติดตามสถานะรอบสัปดาห์ (จันทร์-ศุกร์) และความคืบหน้าสะสมสู่เป้าหมาย 45 ครั้ง พร้อมระบบส่งงานจิตอาสาแก้แถว
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -674,50 +972,78 @@ export function RemedialManagementClient({
                                     </span>
                                   </div>
                                   <p className="text-xs text-muted-foreground mt-0.5">
-                                    ห้อง {item.classroom} • มา {item.presentDays}/{item.totalDays} วัน (ขาด {item.absentDays} วัน)
+                                    ห้อง {item.classroom}
                                   </p>
                                 </div>
-                                {item.remedialOverallStatus === "REMEDIED" ? (
-                                  <Badge variant="success">ผ่านเกณฑ์แล้ว</Badge>
-                                ) : item.remedialOverallStatus === "IN_PROGRESS" ? (
+                                {item.isCompletedSemester && item.thisWeekStatus !== "FAILED" ? (
+                                  <Badge variant="success">ครบ 45 ครั้งแล้ว</Badge>
+                                ) : item.pendingRemedialCount > 0 ? (
                                   <Badge variant="warning">
                                     รอตรวจ ({item.pendingRemedialCount})
                                   </Badge>
+                                ) : item.thisWeekStatus === "FAILED" ? (
+                                  <Badge variant="destructive">ตกเกณฑ์สัปดาห์นี้</Badge>
                                 ) : (
                                   <Badge variant="destructive">
-                                    ต้องแก้ ({item.remainingDeficitDays} วัน)
+                                    ขาดอีก {item.remainingDeficitDays} ครั้ง
                                   </Badge>
                                 )}
                               </div>
 
+                              {/* Week Tracker */}
+                              <div className="flex items-center justify-between text-xs bg-muted/40 p-2 rounded-lg">
+                                <span className="text-muted-foreground font-medium">สัปดาห์นี้ (≥ 3 วัน):</span>
+                                <div className="flex items-center gap-1">
+                                  {item.thisWeekDays.map((d) => (
+                                    <span
+                                      key={d.dateIso}
+                                      className={cn(
+                                        "flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold",
+                                        d.status === "PRESENT"
+                                          ? "bg-emerald-500 text-white"
+                                          : d.status === "ABSENT"
+                                          ? "bg-rose-500 text-white"
+                                          : "bg-muted text-muted-foreground border border-border/50"
+                                      )}
+                                    >
+                                      {d.dayLabel}
+                                    </span>
+                                  ))}
+                                  <span className="ml-1 text-[11px] font-semibold">
+                                    ({item.thisWeekPresentDays}/3 วัน)
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Semester Progress */}
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between text-xs">
                                   <span className="text-muted-foreground">
-                                    เวลาเข้าแถวสุทธิ
+                                    ยอดสะสมทั้งเทอม (เป้า 45 ครั้ง)
                                   </span>
                                   <span
                                     className={cn(
-                                      "font-bold",
-                                      item.effectiveAttendancePercent >= 80
+                                      "font-bold font-mono",
+                                      item.isCompletedSemester
                                         ? "text-emerald-600 dark:text-emerald-400"
-                                        : "text-rose-600 dark:text-rose-400"
+                                        : "text-amber-600 dark:text-amber-400"
                                     )}
                                   >
-                                    {item.effectiveAttendancePercent}%
+                                    {item.effectivePresentDays} / 45 ครั้ง
                                   </span>
                                 </div>
                                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                                   <div
                                     className={cn(
                                       "h-full rounded-full",
-                                      item.effectiveAttendancePercent >= 80
+                                      item.isCompletedSemester
                                         ? "bg-emerald-500"
-                                        : "bg-rose-500"
+                                        : "bg-primary"
                                     )}
                                     style={{
                                       width: `${Math.min(
                                         100,
-                                        item.effectiveAttendancePercent
+                                        (item.effectivePresentDays / 45) * 100
                                       )}%`,
                                     }}
                                   />
@@ -785,9 +1111,16 @@ export function RemedialManagementClient({
                     เมื่อกด &quot;อนุมัติ (Approve)&quot; ระบบจะนำวันขาดแถวที่เลือกไปคำนวณชดเชยเปอร์เซ็นต์การเข้าแถวทันที
                   </CardDescription>
                 </div>
-                <Badge variant="info">
-                  สิทธิ์ปัจจุบัน: {activeRole === "ADMIN" ? "ผู้ดูแลระบบ (อนุมัติได้)" : "ครูที่ปรึกษา"}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="info">
+                    สิทธิ์ปัจจุบัน: {userRole === "ADMIN" ? "ผู้ดูแลระบบ (อนุมัติได้ทุกห้อง)" : "ครูที่ปรึกษา"}
+                  </Badge>
+                  {userRole === "TEACHER" && teacherRooms.length > 0 && (
+                    <Badge variant="success">
+                      ห้องที่คุณดูแลและอนุมัติได้: {teacherRooms.join(", ")}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -865,30 +1198,36 @@ export function RemedialManagementClient({
 
                       <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                         {log.status === "PENDING" ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="success"
-                              disabled={isPending}
-                              onClick={() =>
-                                handleReviewLog(log.id, "APPROVED")
-                              }
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              <span>อนุมัติ (Approve)</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              disabled={isPending}
-                              onClick={() =>
-                                handleReviewLog(log.id, "REJECTED")
-                              }
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              <span>ไม่อนุมัติ</span>
-                            </Button>
-                          </>
+                          canApproveStudentRoom(log.classroom) ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="success"
+                                disabled={isPending}
+                                onClick={() =>
+                                  handleReviewLog(log.id, "APPROVED")
+                                }
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                <span>อนุมัติ (Approve)</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={isPending}
+                                onClick={() =>
+                                  handleReviewLog(log.id, "REJECTED")
+                                }
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                <span>ไม่อนุมัติ</span>
+                              </Button>
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1.5 rounded-xl border">
+                              รอครูประจำห้อง {log.classroom} หรือฝ่ายปกครองตรวจ
+                            </span>
+                          )
                         ) : log.status === "APPROVED" ? (
                           <Badge variant="success" className="px-3 py-1">
                             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -899,16 +1238,18 @@ export function RemedialManagementClient({
                             <Badge variant="destructive" className="px-3 py-1">
                               ไม่อนุมัติ (Rejected)
                             </Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={isPending}
-                              onClick={() =>
-                                handleReviewLog(log.id, "APPROVED")
-                              }
-                            >
-                              อนุมัติย้อนหลัง
-                            </Button>
+                            {canApproveStudentRoom(log.classroom) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isPending}
+                                onClick={() =>
+                                  handleReviewLog(log.id, "APPROVED")
+                                }
+                              >
+                                อนุมัติย้อนหลัง
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -929,7 +1270,7 @@ export function RemedialManagementClient({
               บันทึกกิจกรรมแก้แถว (Remedial Activity Form)
             </DialogTitle>
             <DialogDescription>
-              เลือกวันที่นักเรียนขาดแถวเพื่อนำกิจกรรมบำเพ็ญประโยชน์มาชดเชยเวลาเข้าแถวให้ครบเกณฑ์ 80%
+              เลือกวันที่นักเรียนขาดแถวเพื่อนำกิจกรรมบำเพ็ญประโยชน์มาชดเชยเวลาเข้าแถวให้ครบเกณฑ์ 45 ครั้ง
             </DialogDescription>
           </DialogHeader>
 
@@ -1103,13 +1444,107 @@ export function RemedialManagementClient({
                   </p>
                 )}
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="proofUrl">ลิงก์รูปภาพหลักฐาน (ถ้ามี)</Label>
+            {/* Direct Image Upload for Proof */}
+            <div className="space-y-2 rounded-xl border border-border/80 bg-muted/20 p-3.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold flex items-center gap-1.5">
+                  <ImageIcon className="h-4 w-4 text-primary" />
+                  <span>รูปภาพหลักฐานการทำกิจกรรมจิตอาสา (Direct Upload)</span>
+                </Label>
+                {imagePreview && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImagePreview(null);
+                      form.setValue("proofUrl", "");
+                    }}
+                    className="text-xs text-rose-500 hover:underline cursor-pointer"
+                  >
+                    ลบรูปภาพ
+                  </button>
+                )}
+              </div>
+
+              {imagePreview ? (
+                <div className="relative rounded-xl border border-border p-2.5 bg-card flex items-center gap-3">
+                  <img
+                    src={imagePreview}
+                    alt="Proof preview"
+                    className="h-16 w-16 rounded-lg object-cover border border-border shadow-xs"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      แนบรูปภาพหลักฐานเรียบร้อยแล้ว
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      {form.watch("proofUrl") || "พร้อมบันทึกลงในระบบ"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => proofFileInputRef.current?.click()}
+                    className="h-8 text-xs shrink-0"
+                  >
+                    เปลี่ยนรูป
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => proofFileInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border bg-card p-4 text-center hover:border-primary/50 hover:bg-muted/40 cursor-pointer transition-all"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    {isUploadingProof ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Camera className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold">
+                      {isUploadingProof
+                        ? "กำลังอัปโหลดรูปภาพ..."
+                        : "คลิกเพื่อถ่ายรูป หรือเลือกรูปภาพจากเครื่อง"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      รองรับไฟล์ JPG, PNG, WebP (ถ่ายภาพจากมือถือหรือแท็บเล็ตได้)
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <input
+                ref={proofFileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleDirectImageUpload}
+                className="hidden"
+              />
+
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                  หรือวาง URL:
+                </span>
                 <Input
                   id="proofUrl"
                   placeholder="https://..."
+                  className="h-7 text-xs flex-1"
                   {...form.register("proofUrl")}
+                  onChange={(e) => {
+                    form.setValue("proofUrl", e.target.value);
+                    if (
+                      e.target.value.startsWith("http") ||
+                      e.target.value.startsWith("/")
+                    ) {
+                      setImagePreview(e.target.value);
+                    }
+                  }}
                 />
               </div>
             </div>
@@ -1156,6 +1591,16 @@ export function RemedialManagementClient({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Printable Deficit Notice Modal (< 80%) */}
+      <PrintableNoticeModal
+        open={isPrintNoticeOpen}
+        onOpenChange={setIsPrintNoticeOpen}
+        students={initialReport.deficitStudents}
+        classrooms={Array.from(
+          new Set(initialReport.deficitStudents.map((s) => s.classroom))
+        ).sort()}
+      />
     </div>
   );
 }

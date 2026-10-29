@@ -23,23 +23,69 @@ async function main() {
   // 1. Seed Users
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@school.ac.th" },
-    update: {},
+    update: {
+      name: "อ.ดร.เกรียงไกร ฝ่ายปกครอง",
+      role: Role.ADMIN,
+      classrooms: null,
+      password: "password123",
+    },
     create: {
       name: "อ.ดร.เกรียงไกร ฝ่ายปกครอง",
       email: "admin@school.ac.th",
       password: "password123",
       role: Role.ADMIN,
+      classrooms: null,
+    },
+  });
+
+  const teacher1User = await prisma.user.upsert({
+    where: { email: "teacher1@school.ac.th" },
+    update: {
+      name: "ครูสมชาย ที่ปรึกษา (ดูแล ม.4/1, ม.4/2)",
+      role: Role.TEACHER,
+      classrooms: "ม.4/1,ม.4/2",
+      password: "password123",
+    },
+    create: {
+      name: "ครูสมชาย ที่ปรึกษา (ดูแล ม.4/1, ม.4/2)",
+      email: "teacher1@school.ac.th",
+      password: "password123",
+      role: Role.TEACHER,
+      classrooms: "ม.4/1,ม.4/2",
+    },
+  });
+
+  const teacher2User = await prisma.user.upsert({
+    where: { email: "teacher2@school.ac.th" },
+    update: {
+      name: "ครูวิภาดา ที่ปรึกษา (ดูแล ม.5/1, ม.6/1)",
+      role: Role.TEACHER,
+      classrooms: "ม.5/1,ม.6/1",
+      password: "password123",
+    },
+    create: {
+      name: "ครูวิภาดา ที่ปรึกษา (ดูแล ม.5/1, ม.6/1)",
+      email: "teacher2@school.ac.th",
+      password: "password123",
+      role: Role.TEACHER,
+      classrooms: "ม.5/1,ม.6/1",
     },
   });
 
   const teacherUser = await prisma.user.upsert({
     where: { email: "teacher@school.ac.th" },
-    update: {},
+    update: {
+      name: "ครูสมศรี ที่ปรึกษา (ดูแล ม.4/1)",
+      role: Role.TEACHER,
+      classrooms: "ม.4/1",
+      password: "password123",
+    },
     create: {
-      name: "ครูสมศรี ที่ปรึกษา",
+      name: "ครูสมศรี ที่ปรึกษา (ดูแล ม.4/1)",
       email: "teacher@school.ac.th",
       password: "password123",
       role: Role.TEACHER,
+      classrooms: "ม.4/1",
     },
   });
 
