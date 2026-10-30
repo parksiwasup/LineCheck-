@@ -58,7 +58,7 @@ export function BulkImportModal({
   open,
   onOpenChange,
   onSuccess,
-  existingClassrooms = ["ม.4/1", "ม.4/2", "ม.5/1", "ม.6/1"],
+  existingClassrooms = [],
   initialClassroom = "",
 }: BulkImportModalProps) {
   const [file, setFile] = React.useState<File | null>(null);
@@ -133,25 +133,115 @@ export function BulkImportModal({
       const workbook = XLSX.read(buffer, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, {
-        defval: "",
-        raw: false,
-      });
 
-      if (!jsonData || jsonData.length === 0) {
+      // อ่านข้อมูลดิบแบบ 2D Array เพื่อตรวจหาแถวหัวตารางที่แท้จริง (รองรับไฟล์ที่มีหัวรายงานหลายแถวด้านบน)
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      if (!rawRows || rawRows.length === 0) {
         toast.error("ไม่พบข้อมูลในชีตแรกของไฟล์");
         setIsParsing(false);
         return;
       }
 
+      // 1. ตรวจหาชื่อห้องเรียนจากข้อมูลส่วนหัวรายงาน (Metadata เช่น ชั้นปี, ชื่อกลุ่มเรียน, ห้องเรียน)
+      let autoDetectedClassroom = "";
+      for (let i = 0; i < Math.min(rawRows.length, 12); i++) {
+        const row = rawRows[i] || [];
+        for (let j = 0; j < row.length; j++) {
+          const cell = String(row[j] || "").trim();
+          if (
+            cell.includes("ชั้นปี") ||
+            cell.includes("ระดับชั้น") ||
+            cell.includes("ห้องเรียน") ||
+            cell.includes("ห้อง") ||
+            cell.includes("ชื่อกลุ่มเรียน")
+          ) {
+            for (let k = j + 1; k < row.length; k++) {
+              const val = String(row[k] || "").trim();
+              if (
+                val &&
+                !val.includes("ครู") &&
+                !val.includes("รหัส") &&
+                !val.includes("กลุ่มเรียน") &&
+                !val.includes("รายงาน")
+              ) {
+                if (!autoDetectedClassroom || cell.includes("ชั้นปี")) {
+                  autoDetectedClassroom = val;
+                }
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (autoDetectedClassroom && !defaultClassroom) {
+        setDefaultClassroom(autoDetectedClassroom);
+      }
+
+      // 2. ค้นหาแถวที่เป็น "หัวตารางรายชื่อนักเรียน" อย่างชาญฉลาด (ต้องมีทั้งคอลัมน์รหัส และคอลัมน์ชื่อ)
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(rawRows.length, 25); i++) {
+        const row = (rawRows[i] || []).map((c) => normalizeKey(String(c || "")));
+        const hasStudentId = row.some((c) =>
+          c === "รหัสประจำตัว" ||
+          c === "รหัสนักเรียน" ||
+          c === "เลขประจำตัว" ||
+          c === "studentid" ||
+          c === "รหัส"
+        );
+        const hasName = row.some((c) =>
+          c.includes("ชื่อสกุล") ||
+          c.includes("ชื่อ-สกุล") ||
+          c.includes("ชื่อ-นามสกุล") ||
+          c.includes("ชื่อและนามสกุล") ||
+          c === "ชื่อ" ||
+          c === "name" ||
+          c === "fullname" ||
+          c.includes("ชื่อ")
+        );
+
+        if (hasStudentId && hasName) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      // ถ้ายังไม่เจอ ให้ตรวจหาแถวที่มีคอลัมน์รหัสเป็นหลัก
+      if (headerRowIndex === -1) {
+        for (let i = 0; i < Math.min(rawRows.length, 25); i++) {
+          const row = (rawRows[i] || []).map((c) => normalizeKey(String(c || "")));
+          if (row.some((c) => c.includes("รหัส") || c.includes("studentid") || c.includes("เลขประจำตัว"))) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        headerRowIndex = 0;
+      }
+
+      const headerCells = (rawRows[headerRowIndex] || []).map((c) => String(c || "").trim());
+
+      // 3. อ่านข้อมูลนักเรียนแต่ละคนตั้งแต่แถวถัดจากหัวตาราง
       const rows: ParsedStudentRow[] = [];
       const seenIds = new Set<string>();
 
-      jsonData.forEach((row: any, idx: number) => {
-        const rowNum = idx + 2; // header is row 1
-        const keys = Object.keys(row);
+      for (let rIdx = headerRowIndex + 1; rIdx < rawRows.length; rIdx++) {
+        const rawRow = rawRows[rIdx];
+        if (!rawRow || rawRow.length === 0) continue;
 
-        // Find relevant column values
+        const rowStr = rawRow.map((c) => String(c || "")).join(" ");
+        if (
+          rowStr.includes("รวมทั้งสิ้น") ||
+          rowStr.includes("ยอดรวม") ||
+          rowStr.includes("จำนวนนักเรียน") ||
+          rowStr.includes("ผู้จัดทำ")
+        ) {
+          continue;
+        }
+
         let studentId = "";
         let title = "";
         let firstName = "";
@@ -160,9 +250,9 @@ export function BulkImportModal({
         let status = "ACTIVE";
         let fullName = "";
 
-        for (const k of keys) {
-          const val = String(row[k] || "").trim();
-          const nk = normalizeKey(k);
+        headerCells.forEach((header, colIdx) => {
+          const val = String(rawRow[colIdx] !== undefined && rawRow[colIdx] !== null ? rawRow[colIdx] : "").trim();
+          const nk = normalizeKey(header);
 
           if (
             nk.includes("รหัสนักเรียน") ||
@@ -182,6 +272,8 @@ export function BulkImportModal({
           } else if (
             nk.includes("ชื่อสกุล") ||
             nk.includes("ชื่อ-สกุล") ||
+            nk.includes("ชื่อ-นามสกุล") ||
+            nk.includes("ชื่อและนามสกุล") ||
             nk === "fullname"
           ) {
             fullName = val;
@@ -210,20 +302,31 @@ export function BulkImportModal({
           } else if (nk.includes("สถานะ") || nk === "status") {
             status = val;
           }
-        }
+        });
 
-        // If no explicit firstName but fullName exists, split it
+        // ถ้ามีแต่ชื่อเต็ม ให้ตัดคำนำหน้า ชื่อ และนามสกุล
         if (!firstName && fullName) {
           const split = splitThaiName(fullName);
           if (!title) title = split.title;
           firstName = split.firstName;
-          if (!lastName) lastName = split.lastName;
+          if (!lastName || lastName === "-") lastName = split.lastName;
+        } else if (firstName && !title) {
+          const split = splitThaiName(firstName);
+          if (split.title && split.firstName !== firstName) {
+            title = split.title;
+            firstName = split.firstName;
+          }
         }
 
-        // Format student ID cleanly
-        studentId = studentId.replace(/[^\w\d]/g, "");
+        // จัดรูปแบบรหัสนักเรียน (ลบอักขระพิเศษ)
+        studentId = String(studentId).replace(/[^\w\d]/g, "");
 
-        // Validation
+        // ข้ามบรรทัดที่ว่างเปล่าทั้งหมด
+        if (!studentId && !firstName && !fullName) {
+          continue;
+        }
+
+        // ตรวจสอบความถูกต้อง
         let isValid = true;
         let errorMsg = "";
 
@@ -243,22 +346,24 @@ export function BulkImportModal({
         }
 
         rows.push({
-          _rowNum: rowNum,
+          _rowNum: rIdx + 1,
           _isValid: isValid,
           _errorMsg: errorMsg,
           studentId,
           title: title || "นาย",
           firstName,
           lastName: lastName || "-",
-          classroom,
+          classroom: classroom || autoDetectedClassroom || defaultClassroom || "",
           status:
             status.toLowerCase().includes("inactive") ||
             status.includes("พัก") ||
-            status.includes("ย้าย")
+            status.includes("ย้าย") ||
+            status.includes("พ้นสภาพ") ||
+            status.includes("ลาออก")
               ? "INACTIVE"
               : "ACTIVE",
         });
-      });
+      }
 
       setParsedRows(rows);
       toast.success(`อ่านข้อมูลสำเร็จ: พบทั้งหมด ${rows.length} รายการ`);

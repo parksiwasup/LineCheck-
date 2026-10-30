@@ -66,6 +66,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
         token.role = user.role ?? "TEACHER";
         token.image = user.image ?? null;
         token.classrooms = (user as { classrooms?: string | null }).classrooms ?? null;
@@ -73,25 +75,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
+      if (session.user && (token.id || token.email)) {
+        if (token.id) session.user.id = token.id as string;
 
-        // Fetch latest profile state (image, classrooms, role) from DB for real-time accuracy
+        // Fetch latest profile state (name, image, classrooms, role) from DB for real-time sync
         try {
-          const freshUser = await prisma.user.findUnique({
-            where: { id: token.id as string },
-            select: { role: true, image: true, classrooms: true, name: true },
-          });
+          let freshUser = token.id
+            ? await prisma.user.findUnique({
+                where: { id: token.id as string },
+                select: { id: true, role: true, image: true, classrooms: true, name: true, email: true },
+              })
+            : null;
+
+          if (!freshUser && (token.email || session.user.email)) {
+            const lookupEmail = (token.email || session.user.email) as string;
+            freshUser = await prisma.user.findUnique({
+              where: { email: lookupEmail },
+              select: { id: true, role: true, image: true, classrooms: true, name: true, email: true },
+            });
+            if (freshUser) {
+              session.user.id = freshUser.id;
+            }
+          }
 
           if (freshUser) {
             session.user.role = freshUser.role;
             session.user.image = freshUser.image;
             session.user.classrooms = freshUser.classrooms;
             if (freshUser.name) session.user.name = freshUser.name;
+            if (freshUser.email) session.user.email = freshUser.email;
           } else {
             session.user.role = (token.role as Role) ?? "TEACHER";
             session.user.image = (token.image as string | null) ?? null;
             session.user.classrooms = (token.classrooms as string | null) ?? null;
+            if (token.name) session.user.name = token.name;
           }
         } catch {
           session.user.role = (token.role as Role) ?? "TEACHER";

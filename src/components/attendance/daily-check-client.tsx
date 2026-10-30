@@ -20,6 +20,7 @@ import {
   Copy,
   AlertTriangle,
   Wrench,
+  Shield,
 } from "lucide-react";
 import type { AttendanceStatus } from "@prisma/client";
 import {
@@ -211,6 +212,22 @@ export function DailyCheckClient({
     initialData.dateIso,
     setStatusFilter,
   ]);
+
+  // หากเป็นครูที่ถูกจำกัดสิทธิ์ห้องเรียน ให้เลือกห้องที่ดูแลโดยอัตโนมัติ (ป้องกันกรณี store ค้างค่า "ALL" หรือห้องอื่น)
+  React.useEffect(() => {
+    if (userRole === "TEACHER" && assignedClassrooms?.trim()) {
+      const allowedList = assignedClassrooms
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (
+        allowedList.length > 0 &&
+        (!allowedList.includes(selectedClassroom) || selectedClassroom === "ALL")
+      ) {
+        setSelectedClassroom(initialClassrooms[0] || allowedList[0]);
+      }
+    }
+  }, [userRole, assignedClassrooms, initialClassrooms, selectedClassroom, setSelectedClassroom]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
     React.startTransition(() => {
@@ -490,12 +507,13 @@ export function DailyCheckClient({
             {/* Classroom Selector */}
             <div className="md:col-span-4 space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  ห้องเรียน (Classroom)
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <span>ห้องเรียน (Classroom)</span>
                 </label>
-                {userRole === "TEACHER" && assignedClassrooms && (
-                  <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                    ห้องที่คุณดูแล: {assignedClassrooms}
+                {userRole === "TEACHER" && assignedClassrooms?.trim() && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25">
+                    <Shield className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                    <span>ดูแลเฉพาะ: {assignedClassrooms}</span>
                   </span>
                 )}
               </div>
@@ -503,7 +521,7 @@ export function DailyCheckClient({
                 {initialClassrooms.map((room) => {
                   const isAssigned =
                     userRole === "ADMIN" ||
-                    !assignedClassrooms ||
+                    !assignedClassrooms?.trim() ||
                     assignedClassrooms
                       .split(",")
                       .map((c) => c.trim())
@@ -523,27 +541,27 @@ export function DailyCheckClient({
                           : "bg-muted/40 text-muted-foreground border-border hover:bg-accent"
                       )}
                     >
-                      {isAssigned &&
-                        userRole === "TEACHER" &&
-                        assignedClassrooms && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                        )}
+                      {userRole === "TEACHER" && assignedClassrooms?.trim() && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      )}
                       <span>{room}</span>
                     </button>
                   );
                 })}
-                <button
-                  type="button"
-                  onClick={() => setSelectedClassroom("ALL")}
-                  className={cn(
-                    "rounded-xl px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border",
-                    selectedClassroom === "ALL"
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                      : "bg-card text-foreground border-border hover:bg-accent"
-                  )}
-                >
-                  ทุกห้อง
-                </button>
+                {(userRole === "ADMIN" || !assignedClassrooms?.trim()) && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedClassroom("ALL")}
+                    className={cn(
+                      "rounded-xl px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border",
+                      selectedClassroom === "ALL"
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                        : "bg-card text-foreground border-border hover:bg-accent"
+                    )}
+                  >
+                    ทุกห้อง
+                  </button>
+                )}
               </div>
             </div>
 
@@ -555,12 +573,12 @@ export function DailyCheckClient({
               <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
                 <PopoverTrigger
                   className={cn(
-                    "flex h-10 w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm font-medium shadow-xs transition-colors cursor-pointer",
+                    "flex h-11 w-full items-center justify-between gap-2.5 rounded-full border-2 px-4 py-2 text-sm font-semibold shadow-xs transition-all cursor-pointer",
                     selectedDate.getDay() === 0 || selectedDate.getDay() === 6
-                      ? "border-rose-500/35 bg-rose-500/[0.04] hover:bg-rose-500/[0.08]"
+                      ? "border-rose-500/40 bg-rose-500/[0.05] hover:bg-rose-500/[0.10] text-rose-950 dark:text-rose-100"
                       : selectedDate.getDay() === 3 || selectedDate.getDay() === 4
-                      ? "border-violet-500/40 bg-violet-500/[0.05] hover:bg-violet-500/[0.10]"
-                      : "border-emerald-500/40 bg-emerald-500/[0.05] hover:bg-emerald-500/[0.10]"
+                      ? "border-violet-500/50 bg-violet-500/[0.06] hover:bg-violet-500/[0.12] text-violet-950 dark:text-violet-100"
+                      : "border-emerald-500/50 bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] text-emerald-950 dark:text-emerald-100"
                   )}
                 >
                   <span className="flex items-center gap-2 truncate">
@@ -581,20 +599,20 @@ export function DailyCheckClient({
                     </span>
                   </span>
                   {selectedDate.getDay() === 0 || selectedDate.getDay() === 6 ? (
-                    <span className="shrink-0 rounded-full bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:text-rose-300">
+                    <span className="shrink-0 rounded-full bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 text-[11px] font-bold text-rose-700 dark:text-rose-300">
                       วันหยุด
                     </span>
                   ) : selectedDate.getDay() === 3 || selectedDate.getDay() === 4 ? (
-                    <span className="shrink-0 rounded-full bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">
+                    <span className="shrink-0 rounded-full bg-violet-500/20 border border-violet-500/35 px-2.5 py-0.5 text-[11px] font-bold text-violet-700 dark:text-violet-300">
                       หยุด • คลินิกแก้แถว
                     </span>
                   ) : (
-                    <span className="shrink-0 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                    <span className="shrink-0 rounded-full bg-emerald-500/20 border border-emerald-500/35 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                       วันมาเข้าแถว
                     </span>
                   )}
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-1.5 rounded-2xl shadow-lg">
+                <PopoverContent align="start" side="bottom" sideOffset={8} className="w-auto p-2 rounded-3xl shadow-2xl border border-border/80 bg-popover">
                   <Calendar
                     mode="single"
                     selected={selectedDate}

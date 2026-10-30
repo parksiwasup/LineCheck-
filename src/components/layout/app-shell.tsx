@@ -20,6 +20,7 @@ import {
   Palette,
   Check,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/layout/sidebar";
 import { UserProfilePopover } from "@/components/layout/user-profile-popover";
@@ -90,6 +91,7 @@ export function AppShell({ children, session }: AppShellProps) {
   React.useEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
+    root.setAttribute("data-color-theme", colorTheme);
     root.classList.remove("theme-ocean", "theme-emerald", "theme-violet", "theme-rose", "theme-amber", "theme-teal");
     root.classList.add(`theme-${colorTheme}`);
     localStorage.setItem("linecheck-color-theme", colorTheme);
@@ -98,6 +100,7 @@ export function AppShell({ children, session }: AppShellProps) {
   React.useEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
+    root.setAttribute("data-bg-style", bgStyle);
     root.classList.remove("bg-gradient", "bg-dots", "bg-solid");
     root.classList.add(`bg-${bgStyle}`);
     localStorage.setItem("linecheck-bg-style", bgStyle);
@@ -132,6 +135,100 @@ export function AppShell({ children, session }: AppShellProps) {
     return { pageTitle: "LineCheck+", mobileTitle: "LineCheck+" };
   }, [pathname]);
 
+  const { theme, setTheme } = useTheme();
+  const isLoginPage = pathname?.startsWith("/login");
+
+  if (isLoginPage) {
+    return (
+      <div className="min-h-dvh flex flex-col bg-background relative selection:bg-primary/20 selection:text-primary">
+        {/* Top Floating Controls (Theme & Palette) */}
+        <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+          {/* Quick Theme Switcher */}
+          <button
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer shadow-2xs"
+            title="เปลี่ยนธีม สว่าง/มืด"
+          >
+            {mounted && theme === "dark" ? (
+              <Sun className="h-4 w-4 text-amber-400" />
+            ) : (
+              <Moon className="h-4 w-4 text-slate-700" />
+            )}
+          </button>
+
+          {/* Palette Popover */}
+          <Popover>
+            <PopoverTrigger
+              title="ปรับแต่งชุดสีและสไตล์พื้นหลัง"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer shadow-2xs"
+            >
+              <Palette className="h-4 w-4 text-primary" />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-68 p-4 space-y-3 rounded-2xl">
+              <div>
+                <span className="text-xs font-bold text-foreground block">
+                  โทนสีหลัก (Accent Color)
+                </span>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  {COLOR_THEMES.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setColorTheme(t.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-xl border p-1.5 text-xs font-medium transition-all cursor-pointer",
+                        colorTheme === t.id
+                          ? "border-primary bg-primary/10 shadow-xs ring-2 ring-primary/20"
+                          : "border-border hover:bg-muted"
+                      )}
+                    >
+                      <span className={cn("h-3.5 w-3.5 rounded-full shrink-0", t.swatch)} />
+                      <span className="truncate text-[11px]">{t.name.split(" ")[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border">
+                <span className="text-xs font-bold text-foreground block">
+                  สไตล์พื้นหลัง (Background Style)
+                </span>
+                <div className="grid grid-cols-1 gap-1.5 mt-2">
+                  {BACKGROUND_STYLES.map((bg) => (
+                    <button
+                      key={bg.id}
+                      type="button"
+                      onClick={() => setBgStyle(bg.id)}
+                      className={cn(
+                        "flex items-center justify-between rounded-xl border px-2.5 py-1.5 text-xs text-left transition-all cursor-pointer",
+                        bgStyle === bg.id
+                          ? "border-primary bg-primary/10 font-bold"
+                          : "border-border hover:bg-muted text-muted-foreground"
+                      )}
+                    >
+                      <span className="text-xs">{bg.label}</span>
+                      {bgStyle === bg.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Fullscreen centered content */}
+        <main className="flex-1 flex flex-col justify-center items-center w-full px-4 py-8">
+          {children}
+        </main>
+
+        <footer className="py-4 text-center text-xs text-muted-foreground/80 border-t border-border/40">
+          LineCheck+ • ระบบเช็คชื่อหน้าเสาธงและบริหารจัดการกิจกรรมแก้แถวสถานศึกษา
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh flex bg-background">
       {/* 1. Desktop Left Sidebar (Fixed on Desktop) */}
@@ -164,8 +261,8 @@ export function AppShell({ children, session }: AppShellProps) {
 
       {/* 3. Main Content Wrapper (Shifted right on Desktop) */}
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64 xl:pl-72">
-        {/* Top Utility Header */}
-        <header className="sticky top-0 z-30 h-16 w-full border-b border-border/80 bg-card/85 backdrop-blur-md px-3 sm:px-6 lg:px-8 xl:px-10 flex items-center justify-between gap-2 sm:gap-3">
+        {/* Top Utility Header - Comfortable 72px height aligned with Sidebar header */}
+        <header className="sticky top-0 z-30 h-[72px] w-full border-b border-border/80 bg-card/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 xl:px-10 flex items-center justify-between gap-3">
           {/* Left: Mobile Toggle & Page Title */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
             <button
@@ -275,61 +372,44 @@ export function AppShell({ children, session }: AppShellProps) {
         </footer>
       </div>
 
-      {/* Mobile Bottom Navigation Bar (< md) */}
+      {/* Mobile Bottom Navigation Bar (< lg) */}
       <nav
         aria-label="Mobile Bottom Navigation"
-        className="fixed bottom-0 inset-x-0 z-40 flex lg:hidden border-t border-border/80 bg-card/95 backdrop-blur-lg px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] justify-around shadow-lg"
+        className="fixed bottom-0 inset-x-0 z-40 flex lg:hidden border-t border-border/80 bg-card/95 backdrop-blur-xl px-2 py-1.5 pb-[calc(0.5rem+env(safe-area-inset-bottom))] justify-around shadow-xl"
       >
-        <Link
-          href="/dashboard"
-          className={cn(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold transition-all",
-            pathname === "/dashboard" ? "bg-primary/15 text-primary" : "text-muted-foreground"
-          )}
-        >
-          <LayoutDashboard className="h-4 w-4" />
-          <span>แดชบอร์ด</span>
-        </Link>
-        <Link
-          href="/attendance/check"
-          className={cn(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold transition-all",
-            pathname.startsWith("/attendance/check") ? "bg-primary/15 text-primary" : "text-muted-foreground"
-          )}
-        >
-          <ClipboardCheck className="h-4 w-4" />
-          <span>เช็คชื่อ</span>
-        </Link>
-        <Link
-          href="/attendance/remedial"
-          className={cn(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold transition-all",
-            pathname.startsWith("/attendance/remedial") ? "bg-primary/15 text-primary" : "text-muted-foreground"
-          )}
-        >
-          <ShieldAlert className="h-4 w-4" />
-          <span>แก้แถว</span>
-        </Link>
-        <Link
-          href="/grades"
-          className={cn(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold transition-all",
-            pathname.startsWith("/grades") ? "bg-primary/15 text-primary" : "text-muted-foreground"
-          )}
-        >
-          <Award className="h-4 w-4" />
-          <span>ตัดเกรด</span>
-        </Link>
-        <Link
-          href="/portal"
-          className={cn(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold transition-all",
-            pathname.startsWith("/portal") ? "bg-primary/15 text-primary" : "text-muted-foreground"
-          )}
-        >
-          <GraduationCap className="h-4 w-4" />
-          <span>เช็คผล</span>
-        </Link>
+        {[
+          { href: "/dashboard", label: "แดชบอร์ด", icon: LayoutDashboard, exact: true, activeBg: "bg-blue-600 text-white shadow-md shadow-blue-500/25" },
+          { href: "/attendance/check", label: "เช็คชื่อ", icon: ClipboardCheck, exact: false, activeBg: "bg-emerald-600 text-white shadow-md shadow-emerald-500/25" },
+          { href: "/attendance/remedial", label: "แก้แถว", icon: ShieldAlert, exact: false, activeBg: "bg-amber-600 text-white shadow-md shadow-amber-500/25" },
+          { href: "/grades", label: "ตัดเกรด", icon: Award, exact: false, activeBg: "bg-purple-600 text-white shadow-md shadow-purple-500/25" },
+          { href: "/portal", label: "เช็คผล", icon: GraduationCap, exact: false, activeBg: "bg-sky-600 text-white shadow-md shadow-sky-500/25" },
+        ].map((item) => {
+          const Icon = item.icon;
+          const isActive = item.exact
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "relative flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl py-1.5 px-1 text-[10px] font-semibold transition-all duration-200 select-none",
+                isActive
+                  ? item.activeBg
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+              )}
+            >
+              <Icon className={cn("h-4 w-4 transition-transform", isActive ? "scale-110" : "")} />
+              <span className={cn("truncate leading-none", isActive ? "font-bold" : "font-medium")}>
+                {item.label}
+              </span>
+              {isActive && (
+                <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-1 w-3 rounded-full bg-white/70" />
+              )}
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );

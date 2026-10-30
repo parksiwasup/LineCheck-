@@ -5,24 +5,8 @@ import {
   AttendanceStatus,
   RemedialStatus,
 } from "@prisma/client";
-import { subDays, startOfDay, isWeekend } from "date-fns";
 
 const prisma = new PrismaClient();
-
-function getPastSchoolDays(count: number): Date[] {
-  const days: Date[] = [];
-  let current = startOfDay(new Date());
-  while (days.length < count) {
-    if (!isWeekend(current)) {
-      const utcDate = new Date(
-        Date.UTC(current.getFullYear(), current.getMonth(), current.getDate())
-      );
-      days.push(utcDate);
-    }
-    current = subDays(current, 1);
-  }
-  return days.reverse();
-}
 
 function getMondayIso(d: Date): string {
   const dow = d.getUTCDay();
@@ -33,8 +17,24 @@ function getMondayIso(d: Date): string {
   return mon.toISOString().slice(0, 10);
 }
 
+// Generate all weekdays (Mon-Fri) for October 2026 (1 Oct 2026 to 29 Oct 2026)
+function getAllSchoolDaysForOct2026(): Date[] {
+  const days: Date[] = [];
+  const current = new Date(Date.UTC(2026, 9, 1)); // Thursday 1 Oct 2026
+  const end = new Date(Date.UTC(2026, 9, 29)); // Thursday 29 Oct 2026 (Today)
+
+  while (current <= end) {
+    const dow = current.getUTCDay();
+    if (dow >= 1 && dow <= 5) {
+      days.push(new Date(current));
+    }
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return days;
+}
+
 async function main() {
-  console.log("🌱 Starting database seed for LineCheck+...");
+  console.log("🌱 Starting database seed for October 2026 ONLY (1 - 29 Oct 2026)...");
 
   // 1. Seed Users
   const adminUser = await prisma.user.upsert({
@@ -54,7 +54,7 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
+  const teacher1 = await prisma.user.upsert({
     where: { email: "teacher1@school.ac.th" },
     update: {
       name: "ครูสมชาย ที่ปรึกษา (ดูแล ม.4/1, ม.4/2)",
@@ -71,7 +71,7 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
+  const teacher2 = await prisma.user.upsert({
     where: { email: "teacher2@school.ac.th" },
     update: {
       name: "ครูวิภาดา ที่ปรึกษา (ดูแล ม.5/1, ม.6/1)",
@@ -105,20 +105,16 @@ async function main() {
     },
   });
 
-  // 2. Seed Students across classrooms with concrete showcase scenarios
+  // 2. Student Roster
   const studentsData = [
-    // ม.4/1 — ห้องตัวอย่างครบทุกกรณี (Showcase Room)
+    // ม.4/1
     { studentId: "66001", title: "นาย", firstName: "ธนกร", lastName: "วงศ์สวัสดิ์", classroom: "ม.4/1", scenario: "PERFECT" },
     { studentId: "66002", title: "นางสาว", firstName: "พิมชนก", lastName: "เลิศล้ำ", classroom: "ม.4/1", scenario: "PERFECT" },
-    // 66003: ขาดวันศุกร์สัปดาห์ก่อน -> มาแก้ในวันหยุดพุธสัปดาห์นี้สำเร็จแล้ว (Cross-week FIFO สำเร็จ!)
     { studentId: "66003", title: "นาย", firstName: "กิตติพงศ์", lastName: "เจริญสุข", classroom: "ม.4/1", scenario: "CROSS_WEEK_FIXED" },
     { studentId: "66004", title: "นางสาว", firstName: "ชญานิษฐ์", lastName: "ศรีสุวรรณ", classroom: "ม.4/1", scenario: "PERFECT" },
-    // 66005: ขาดวันจันทร์สัปดาห์นี้ -> รอนัดแก้ในคลินิกวันหยุด พุธ-พฤหัสฯ นี้ (อยู่ในคิวนัดแก้!)
     { studentId: "66005", title: "นาย", firstName: "ณัฐวุฒิ", lastName: "ทองดี", classroom: "ม.4/1", scenario: "THIS_WEEK_SCHEDULED" },
     { studentId: "66006", title: "นางสาว", firstName: "แพรวา", lastName: "รัตนโชติ", classroom: "ม.4/1", scenario: "SAME_WEEK_FIXED" },
-    // 66007: ขาดวันศุกร์สัปดาห์ก่อน -> โอนคิวมารอแก้ในคลินิกวันพฤหัสฯ นี้ (ยังไม่หลุดเส้นตาย!)
     { studentId: "66007", title: "นาย", firstName: "ภูวดล", lastName: "อินทร์แปลง", classroom: "ม.4/1", scenario: "LAST_FRI_SCHEDULED" },
-    // 66008: ขาด 2 สัปดาห์ก่อนแล้วดองข้ามสัปดาห์ ไม่ยอมมาคลินิก (พ้นเส้นตายวันอาทิตย์ -> ล็อกเป็นค้างแก้สะสมข้ามสัปดาห์!)
     { studentId: "66008", title: "นางสาว", firstName: "กมลชนก", lastName: "บุญมี", classroom: "ม.4/1", scenario: "OVERDUE_LOCKED" },
 
     // ม.4/2
@@ -144,13 +140,12 @@ async function main() {
     { studentId: "64005", title: "นาย", firstName: "กันตภณ", lastName: "แสงทอง", classroom: "ม.6/1", scenario: "PERFECT" },
   ];
 
-  const schoolDays = getPastSchoolDays(21);
-  const todayDate = schoolDays[schoolDays.length - 1];
+  const allSchoolDays = getAllSchoolDaysForOct2026();
+  const todayDate = allSchoolDays[allSchoolDays.length - 1];
   const todayIso = todayDate.toISOString().slice(0, 10);
   const currentMondayIso = getMondayIso(todayDate);
 
-  // Identify distinct weeks in chronological order
-  const uniqueMondays = Array.from(new Set(schoolDays.map(getMondayIso))).sort();
+  const uniqueMondays = Array.from(new Set(allSchoolDays.map(getMondayIso))).sort();
   const prevMondayIso =
     uniqueMondays.length >= 2
       ? uniqueMondays[uniqueMondays.length - 2]
@@ -164,6 +159,9 @@ async function main() {
       ? uniqueMondays[uniqueMondays.length - 4]
       : twoWeeksAgoMondayIso;
 
+  console.log(`📅 Total school weekdays in October: ${allSchoolDays.length} days`);
+
+  const createdStudents = [];
   for (const s of studentsData) {
     const student = await prisma.student.upsert({
       where: { studentId: s.studentId },
@@ -183,19 +181,42 @@ async function main() {
         status: StudentStatus.ACTIVE,
       },
     });
+    createdStudents.push({ ...student, scenario: s.scenario });
+  }
 
-    await prisma.attendanceRecord.deleteMany({ where: { studentId: student.id } });
-    await prisma.remedialRecord.deleteMany({ where: { studentId: student.id } });
+  // Clear old attendance and remedial records
+  await prisma.attendanceRecord.deleteMany({});
+  await prisma.remedialRecord.deleteMany({});
 
-    let volunteerRemedyTarget: Date | null = null;
+  const allAttendanceRows: {
+    studentId: string;
+    date: Date;
+    status: AttendanceStatus;
+    recordedById: string;
+    remark: string | null;
+  }[] = [];
 
-    for (const date of schoolDays) {
+  const allRemedialRows: {
+    studentId: string;
+    targetDate: Date;
+    activityTitle: string;
+    description: string;
+    hoursEarned: number;
+    status: RemedialStatus;
+    approvedById: string | null;
+    createdAt: Date;
+  }[] = [];
+
+  for (const s of createdStudents) {
+    // Generate records for every school day from Jan to Oct 2026
+    for (let dayIdx = 0; dayIdx < allSchoolDays.length; dayIdx++) {
+      const date = allSchoolDays[dayIdx];
       const dateIso = date.toISOString().slice(0, 10);
       const dow = date.getUTCDay(); // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
       const monIso = getMondayIso(date);
       const isHolidayClinic = dow === 3 || dow === 4;
 
-      // หากวันนี้เป็นวันหยุดคลินิก (พุธ/พฤหัสฯ) ให้เว้นว่างของวันนี้ไว้เพื่อให้ครูทดสอบกด [มาแก้แถว] ในหน้าเช็คชื่อได้ทันที!
+      // Leave today (29 Oct) empty if clinic day so teacher can test [มาแก้แถว] live in UI
       if (dateIso === todayIso && isHolidayClinic) {
         continue;
       }
@@ -207,21 +228,35 @@ async function main() {
         ? "วันหยุดประจำสัปดาห์ (พุธ-พฤหัสบดี)"
         : null;
 
+      // Historical behavior across months (Jan - Sep):
+      // Occasional realistic absence/sick leave
+      if (!isHolidayClinic) {
+        // Deterministic pseudo-random pattern based on student id and day
+        const seedValue = (parseInt(s.studentId, 10) * 17 + dayIdx * 31) % 100;
+        if (s.scenario === "OVERDUE_LOCKED" && seedValue < 28) {
+          // Student who frequently skips and fails to meet 80%
+          status = AttendanceStatus.ABSENT;
+          remark = "ขาดแถว (ค้างแก้สะสม)";
+        } else if (seedValue < 3) {
+          // Occasional sick leave for normal students
+          status = AttendanceStatus.LEAVE;
+          remark = "ลาป่วย (มีใบลา)";
+        } else if (seedValue === 4 && s.scenario !== "PERFECT") {
+          status = AttendanceStatus.ABSENT;
+          remark = "ขาดแถว";
+        }
+      }
+
+      // Specific October showcase scenarios
       if (s.scenario === "CROSS_WEEK_FIXED") {
-        // กรณีตัวอย่างเด่น: ขาดวันศุกร์สัปดาห์ที่แล้ว -> มาเข้าคลินิกแก้แถวในวันพุธสัปดาห์นี้สำเร็จ!
         if (monIso === prevMondayIso && dow === 5) {
           status = AttendanceStatus.ABSENT;
           remark = "ขาดแถววันศุกร์ (โอนนัดแก้พุธสัปดาห์ถัดไป)";
         } else if (monIso === currentMondayIso && dow === 3) {
           status = AttendanceStatus.PRESENT;
           remark = "มาเข้าคลินิกแก้แถววันพุธ (ชดเชยวันศุกร์สัปดาห์ก่อน)";
-        } else if (monIso === threeWeeksAgoMondayIso && dow === 2) {
-          status = AttendanceStatus.ABSENT;
-          remark = "ขาดแถววันอังคาร (แก้ด้วยกิจกรรมจิตอาสาแล้ว)";
-          volunteerRemedyTarget = date;
         }
       } else if (s.scenario === "SAME_WEEK_FIXED") {
-        // ขาดวันจันทร์สัปดาห์ที่แล้ว -> มาแก้ในวันพุธสัปดาห์เดียวกันทันที!
         if (monIso === prevMondayIso && dow === 1) {
           status = AttendanceStatus.ABSENT;
           remark = "ขาดแถววันจันทร์";
@@ -230,19 +265,16 @@ async function main() {
           remark = "มาเข้าคลินิกแก้แถววันพุธ (ชดเชยวันจันทร์สัปดาห์เดียวกัน)";
         }
       } else if (s.scenario === "THIS_WEEK_SCHEDULED") {
-        // ขาดวันจันทร์สัปดาห์นี้ -> รอนัดแก้ในคลินิกวันหยุด พุธ-พฤหัสฯ นี้!
         if (monIso === currentMondayIso && dow === 1) {
           status = AttendanceStatus.ABSENT;
           remark = "ขาดแถววันจันทร์ (รอนัดแก้ พุธ-พฤหัสฯ นี้)";
         }
       } else if (s.scenario === "LAST_FRI_SCHEDULED") {
-        // ขาดวันศุกร์สัปดาห์ที่แล้ว -> โอนคิวมารอแก้ในคลินิกวันพฤหัสฯ สัปดาห์นี้!
         if (monIso === prevMondayIso && dow === 5) {
           status = AttendanceStatus.ABSENT;
           remark = "ขาดวันศุกร์ที่แล้ว (นัดมาแก้คลินิก พุธ-พฤหัสฯ นี้)";
         }
       } else if (s.scenario === "OVERDUE_LOCKED") {
-        // ดองงานข้ามสัปดาห์! ขาดเมื่อ 2-3 สัปดาห์ก่อนแล้วไม่ยอมมาแก้จนพ้นเส้นตายวันอาทิตย์ 23:59 น.
         if (monIso === threeWeeksAgoMondayIso && dow === 1) {
           status = AttendanceStatus.ABSENT;
           remark = "ขาดแถว (พ้นเส้นตายสัปดาห์ — ค้างสะสม)";
@@ -252,19 +284,58 @@ async function main() {
         }
       }
 
-      await prisma.attendanceRecord.create({
-        data: {
-          studentId: student.id,
-          date,
-          status,
-          recordedById: teacherUser.id,
-          remark,
-        },
+      allAttendanceRows.push({
+        studentId: s.id,
+        date,
+        status,
+        recordedById: teacherUser.id,
+        remark,
+      });
+    }
+
+    // Add sample remedial activity for students with remedial records
+    if (s.scenario === "CROSS_WEEK_FIXED") {
+      allRemedialRows.push({
+        studentId: s.id,
+        targetDate: new Date(Date.UTC(2026, 8, 8)), // 8 Sep 2026
+        activityTitle: "บำเพ็ญประโยชน์ทำความสะอาดห้องสมุดโรงเรียน",
+        description: "ช่วยจัดหมวดหมู่หนังสือและทำความสะอาดชั้นวางหนังสือ 2 ชั่วโมง",
+        hoursEarned: 2,
+        status: RemedialStatus.APPROVED,
+        approvedById: adminUser.id,
+        createdAt: new Date(Date.UTC(2026, 8, 10)),
+      });
+    } else if (s.scenario === "OVERDUE_LOCKED") {
+      allRemedialRows.push({
+        studentId: s.id,
+        targetDate: new Date(Date.UTC(2026, 9, 5)), // 5 Oct 2026
+        activityTitle: "ช่วยงานจิตอาสาพัฒนาภูมิทัศน์อาคารเรียน",
+        description: "กวาดลานกิจกรรมและรดน้ำต้นไม้หน้าอาคาร 3",
+        hoursEarned: 1.5,
+        status: RemedialStatus.PENDING,
+        approvedById: null,
+        createdAt: new Date(Date.UTC(2026, 9, 27)),
       });
     }
   }
 
-  console.log("✅ Seeded LineCheck+ showcase scenarios (Wed/Thu Make-up Clinic & 2-Tier Weekly Cutoff)!");
+  console.log(`📦 Bulk inserting ${allAttendanceRows.length} attendance records...`);
+  // Insert in chunks of 1000 for maximum performance
+  const chunkSize = 1000;
+  for (let i = 0; i < allAttendanceRows.length; i += chunkSize) {
+    const chunk = allAttendanceRows.slice(i, i + chunkSize);
+    await prisma.attendanceRecord.createMany({ data: chunk });
+  }
+
+  console.log(`📦 Inserting ${allRemedialRows.length} remedial activity records...`);
+  for (const rem of allRemedialRows) {
+    await prisma.remedialRecord.create({ data: rem });
+  }
+
+  console.log(`✅ Successfully seeded October 2026 data:`);
+  console.log(`   - Students: ${createdStudents.length}`);
+  console.log(`   - Attendance Records: ${allAttendanceRows.length}`);
+  console.log(`   - Remedial Records: ${allRemedialRows.length}`);
 }
 
 main()

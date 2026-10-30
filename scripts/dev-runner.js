@@ -61,10 +61,10 @@ function freePort(port) {
   } catch {}
 }
 
-async function ensureMySQL() {
-  const is3306Open = await new Promise((resolve) => {
+async function isPortOpen(port, host = "127.0.0.1", timeoutMs = 1200) {
+  return new Promise((resolve) => {
     const socket = new net.Socket();
-    socket.setTimeout(1200);
+    socket.setTimeout(timeoutMs);
     socket.on("connect", () => {
       socket.destroy();
       resolve(true);
@@ -76,51 +76,70 @@ async function ensureMySQL() {
     socket.on("error", () => {
       resolve(false);
     });
-    socket.connect(3306, "127.0.0.1");
+    socket.connect(port, host);
   });
+}
 
-  if (is3306Open) {
+async function ensureMySQL() {
+  if (await isPortOpen(3306)) {
+    console.log("[+] MySQL is running on port 3306.\n");
     return true;
   }
 
-  const mampMysql = "C:\\MAMP\\bin\\mysql\\bin\\mysqld.exe";
-  const mampIni = "C:\\Users\\Public\\Documents\\Appsolute\\MAMPPRO\\conf\\my.ini";
-  if (fs.existsSync(mampMysql)) {
-    console.log("[*] Starting MySQL Server (MAMP)...");
-    const args = fs.existsSync(mampIni) ? [`--defaults-file=${mampIni}`] : [];
-    try {
-      const mysqlProc = spawn(mampMysql, args, {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      mysqlProc.unref();
+  const candidates = [
+    {
+      name: "MAMP MySQL",
+      bin: "C:\\MAMP\\bin\\mysql\\bin\\mysqld.exe",
+      ini: "C:\\Users\\Public\\Documents\\Appsolute\\MAMPPRO\\conf\\my.ini",
+    },
+    {
+      name: "XAMPP MySQL",
+      bin: "C:\\xampp\\mysql\\bin\\mysqld.exe",
+      ini: "C:\\xampp\\mysql\\bin\\my.ini",
+    },
+    {
+      name: "MySQL Server 8.0",
+      bin: "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+      ini: "C:\\ProgramData\\MySQL\\MySQL Server 8.0\\my.ini",
+    },
+    {
+      name: "MySQL Server 8.4",
+      bin: "C:\\Program Files\\MySQL\\MySQL Server 8.4\\bin\\mysqld.exe",
+      ini: "C:\\ProgramData\\MySQL\\MySQL Server 8.4\\my.ini",
+    },
+    {
+      name: "MariaDB",
+      bin: "C:\\Program Files\\MariaDB 11.0\\bin\\mysqld.exe",
+      ini: "C:\\Program Files\\MariaDB 11.0\\data\\my.ini",
+    },
+  ];
 
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const ready = await new Promise((resolve) => {
-          const s = new net.Socket();
-          s.setTimeout(500);
-          s.on("connect", () => {
-            s.destroy();
-            resolve(true);
-          });
-          s.on("timeout", () => {
-            s.destroy();
-            resolve(false);
-          });
-          s.on("error", () => {
-            resolve(false);
-          });
-          s.connect(3306, "127.0.0.1");
+  for (const c of candidates) {
+    if (fs.existsSync(c.bin)) {
+      console.log(`[*] Starting MySQL Server (${c.name})...`);
+      const args = c.ini && fs.existsSync(c.ini) ? [`--defaults-file=${c.ini}`] : [];
+      try {
+        const mysqlProc = spawn(c.bin, args, {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
         });
-        if (ready) {
-          console.log("[+] MySQL connected successfully.\n");
-          return true;
+        mysqlProc.unref();
+
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          if (await isPortOpen(3306, "127.0.0.1", 500)) {
+            console.log(`[+] ${c.name} connected successfully.\n`);
+            return true;
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
   }
+
+  console.log("[!] Note: Local MySQL server was not detected on port 3306.");
+  console.log("    If you use XAMPP or Laragon, please start MySQL from its Control Panel,");
+  console.log("    or verify DATABASE_URL in .env if using a Cloud database.\n");
   return false;
 }
 

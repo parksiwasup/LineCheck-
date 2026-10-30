@@ -83,7 +83,7 @@ function createInitialStore(): MemoryStore {
   const users: MemUser[] = [
     {
       id: "usr_admin_1",
-      name: "อ.ดร.เกรียงไกร ฝ่ายปกครอง",
+      name: "นายศิวัทรัพย์ โคตจักร์",
       email: "admin@school.ac.th",
       password: "password123",
       image: null,
@@ -93,7 +93,27 @@ function createInitialStore(): MemoryStore {
     },
     {
       id: "usr_teacher_1",
-      name: "ครูสมศรี ที่ปรึกษา",
+      name: "ครูนิภาพร พิมภู (ดูแล ม.4/1, ม.4/2)",
+      email: "teacher1@school.ac.th",
+      password: "password123",
+      image: null,
+      role: Role.TEACHER,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "usr_teacher_2",
+      name: "ครูวิภาดา ที่ปรึกษา (ดูแล ม.5/1, ม.6/1)",
+      email: "teacher2@school.ac.th",
+      password: "password123",
+      image: null,
+      role: Role.TEACHER,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "usr_teacher_3",
+      name: "ครูสมศรี ที่ปรึกษา (ดูแล ม.4/1)",
       email: "teacher@school.ac.th",
       password: "password123",
       image: null,

@@ -86,10 +86,26 @@ export async function getDailyAttendanceAction(
   const isWeekend = dayKind === "WEEKEND";
   const targetMondayIso = formatDateISO(getUtcMonday(targetDate));
 
+  const operator = await getActiveOperator("TEACHER");
+  let allowedRooms: string[] | null = null;
+  if (operator?.role === "TEACHER" && operator.classrooms?.trim()) {
+    allowedRooms = operator.classrooms
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+  }
+
+  const roomFilter =
+    classroom && classroom !== "ALL"
+      ? (allowedRooms && !allowedRooms.includes(classroom)
+          ? { classroom: { in: allowedRooms } }
+          : { classroom })
+      : (allowedRooms ? { classroom: { in: allowedRooms } } : {});
+
   const students = await prisma.student.findMany({
     where: {
       status: StudentStatus.ACTIVE,
-      ...(classroom && classroom !== "ALL" ? { classroom } : {}),
+      ...roomFilter,
     },
     include: {
       attendanceRecords: {
@@ -217,6 +233,30 @@ export async function saveDailyAttendanceAction(
   const targetDate = toUTCDateOnly(dateIso);
   const isMakeupHoliday = getSchoolDayKind(targetDate) === "MAKEUP_HOLIDAY";
   const operator = await getActiveOperator("TEACHER");
+
+  // ตรวจสอบสิทธิ์รายห้องของครูผู้ใช้งาน
+  if (operator?.role === "TEACHER" && operator.classrooms?.trim()) {
+    const allowed = operator.classrooms
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (allowed.length > 0) {
+      const studentDbIds = records.map((r) => r.studentId);
+      const invalidStudents = await prisma.student.findMany({
+        where: {
+          id: { in: studentDbIds },
+          classroom: { notIn: allowed },
+        },
+        select: { studentId: true, classroom: true },
+      });
+      if (invalidStudents.length > 0) {
+        return {
+          success: false,
+          message: `คุณไม่มีสิทธิ์บันทึกการเช็คชื่อห้องอื่น (สิทธิ์ของคุณคือ: ${allowed.join(", ")})`,
+        };
+      }
+    }
+  }
 
   try {
     await prisma.$transaction(

@@ -25,6 +25,7 @@ const userSchema = z.object({
   email: z.string().email("รูปแบบอีเมลไม่ถูกต้อง"),
   password: z.string().optional(),
   role: z.enum(["TEACHER", "ADMIN"]),
+  classrooms: z.string().optional().nullable(),
 });
 
 export interface AdminStudentItem {
@@ -47,6 +48,7 @@ export interface AdminUserItem {
   name: string;
   email: string;
   role: Role;
+  classrooms: string | null;
   recordedCount: number;
   approvedCount: number;
   createdAtIso: string;
@@ -129,14 +131,18 @@ export async function getAdminBackofficeDataAction(): Promise<{
     name: u.name,
     email: u.email,
     role: u.role,
+    classrooms: (u as { classrooms?: string | null }).classrooms ?? null,
     recordedCount: u._count.recordedAttendances,
     approvedCount: u._count.approvedRemedials,
     createdAtIso: u.createdAt.toISOString(),
   }));
 
-  const classroomSet = new Set<string>(["ม.4/1", "ม.4/2", "ม.5/1", "ม.6/1"]);
+  const classroomSet = new Set<string>();
   students.forEach((s) => classroomSet.add(s.classroom));
-  const classrooms = Array.from(classroomSet).sort();
+  const classrooms =
+    classroomSet.size > 0
+      ? Array.from(classroomSet).sort()
+      : [];
 
   const dateMap = new Map<string, AdminAttendanceDateSummary>();
   for (const r of allAttendances) {
@@ -325,6 +331,9 @@ export async function upsertUserAction(
       };
     }
 
+    const classroomsVal =
+      data.role === "TEACHER" ? (data.classrooms?.trim() || null) : null;
+
     if (data.id) {
       await prisma.user.update({
         where: { id: data.id },
@@ -332,6 +341,7 @@ export async function upsertUserAction(
           name: data.name.trim(),
           email: data.email.trim().toLowerCase(),
           role: data.role as Role,
+          classrooms: classroomsVal,
           ...(data.password?.trim() ? { password: data.password.trim() } : {}),
         },
       });
@@ -342,6 +352,7 @@ export async function upsertUserAction(
           email: data.email.trim().toLowerCase(),
           password: data.password?.trim() || "password123",
           role: data.role as Role,
+          classrooms: classroomsVal,
         },
       });
     }

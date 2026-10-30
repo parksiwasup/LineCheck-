@@ -10,25 +10,29 @@ export const dynamic = "force-dynamic";
 
 export default async function AttendanceCheckPage() {
   const session = await auth();
-  const classrooms = await getClassroomsAction();
+  const allClassrooms = await getClassroomsAction();
 
-  let defaultClassroom = classrooms[0] ?? "ม.4/1";
-  if (session?.user?.role === "TEACHER" && session.user.classrooms) {
+  let allowedClassrooms = allClassrooms;
+  if (session?.user?.role === "TEACHER" && session.user.classrooms?.trim()) {
     const assigned = session.user.classrooms
       .split(",")
       .map((c) => c.trim())
       .filter(Boolean);
-    if (assigned.length > 0 && classrooms.includes(assigned[0])) {
-      defaultClassroom = assigned[0];
+    if (assigned.length > 0) {
+      allowedClassrooms = allClassrooms.filter((c) => assigned.includes(c));
+      if (allowedClassrooms.length === 0) {
+        allowedClassrooms = assigned;
+      }
     }
   }
 
+  let defaultClassroom = allowedClassrooms[0] ?? "ม.4/1";
   const todayIso = formatDateISO(new Date());
   const initialData = await getDailyAttendanceAction(defaultClassroom, todayIso);
 
   return (
     <DailyCheckClient
-      initialClassrooms={classrooms}
+      initialClassrooms={allowedClassrooms}
       initialData={initialData}
       assignedClassrooms={session?.user?.classrooms ?? null}
       userRole={session?.user?.role ?? "TEACHER"}

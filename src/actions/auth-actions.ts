@@ -38,6 +38,38 @@ export async function logoutAction() {
   await signOut({ redirectTo: "/login" });
 }
 
+export interface QuickLoginUser {
+  id: string;
+  name: string;
+  email: string;
+  role: "TEACHER" | "ADMIN";
+  classrooms?: string | null;
+  image?: string | null;
+}
+
+export async function getQuickLoginUsersAction(): Promise<QuickLoginUser[]> {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        classrooms: true,
+        image: true,
+      },
+      orderBy: [
+        { role: "asc" }, // ADMIN first
+        { email: "asc" },
+      ],
+    });
+    return users;
+  } catch (error) {
+    console.error("Failed to load quick login users:", error);
+    return [];
+  }
+}
+
 export async function updateUserProfileImageAction(imageUrl: string): Promise<{
   success: boolean;
   message: string;
