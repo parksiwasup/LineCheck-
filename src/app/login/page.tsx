@@ -608,7 +608,7 @@ export default function LoginPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-black shadow-md shadow-sky-500/20 transition-all group-hover:scale-102 cursor-pointer"
           >
             <GraduationCap className="h-4 w-4" />
-            <span>เข้าสู่ระบบเช็คผลด้วยเลขประจำตัว 5 หลัก (Student Portal)</span>
+            <span>เข้าสู่ระบบเช็คผลด้วยรหัสนักเรียน (Student Portal)</span>
             <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
           </Link>
         </div>

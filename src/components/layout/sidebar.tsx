@@ -83,7 +83,7 @@ const navItems = [
   {
     href: "/attendance/remedial",
     label: "ระบบแก้แถว (< 80%)",
-    sublabel: "อนุมัติกิจกรรมจิตอาสาชดเชย",
+    sublabel: "คลินิกแก้แถว พุธ-พฤหัสฯ",
     icon: ShieldAlert,
     badge: "< 80%",
     badgePulse: false,

@@ -340,6 +340,11 @@ export function AdminBackofficeClient({
     });
   };
 
+  // Helper: ทำความสะอาดชื่อครู ตัดข้อความ (ดูแล ...) ออกเพื่อให้เหลือเฉพาะชื่อจริง
+  const cleanTeacherName = (rawName: string): string => {
+    return (rawName || "").replace(/\s*\((?:ดูแล|ประจำชั้น)[^)]*\)/g, "").trim();
+  };
+
   const handleOpenAddUser = () => {
     setUserForm({
       name: "",
@@ -354,7 +359,7 @@ export function AdminBackofficeClient({
   const handleOpenEditUser = (u: AdminUserItem) => {
     setUserForm({
       id: u.id,
-      name: u.name,
+      name: cleanTeacherName(u.name),
       email: u.email,
       password: "",
       role: u.role,
@@ -366,7 +371,11 @@ export function AdminBackofficeClient({
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
     startTransition(async () => {
-      const res = await upsertUserAction(userForm);
+      const cleanForm = {
+        ...userForm,
+        name: cleanTeacherName(userForm.name),
+      };
+      const res = await upsertUserAction(cleanForm);
       if (res.success) {
         toast.success(res.message);
         setIsUserModalOpen(false);
@@ -1678,7 +1687,7 @@ export function AdminBackofficeClient({
                         <div className="min-w-0 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-black text-base text-foreground tracking-tight">
-                              {u.name}
+                              {cleanTeacherName(u.name)}
                             </span>
 
                             {isAdmin ? (
@@ -1726,36 +1735,42 @@ export function AdminBackofficeClient({
                         </div>
                       </div>
 
-                      {/* Right Actions */}
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                        <Button
-                          size="sm"
-                          onClick={() => handleSwitchUserSession(u)}
-                          className="relative overflow-hidden font-bold rounded-xl bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-700 text-white shadow-md shadow-primary/20 hover:shadow-lg transition-all text-xs h-9 px-3.5 flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                      {/* Right Actions: Interactive Luxury Capsule */}
+                      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-muted/40 dark:bg-muted/20 border border-border/70 backdrop-blur-xs shadow-xs shrink-0 self-end sm:self-center transition-all hover:border-primary/30">
+                        {/* Quick Copy Email Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(u.email);
+                            toast.success(`คัดลอกอีเมล ${u.email} เรียบร้อยแล้ว`);
+                          }}
+                          className="group/copy flex items-center justify-center h-8.5 w-8.5 rounded-xl bg-card hover:bg-sky-500 text-muted-foreground hover:text-white border border-border/70 hover:border-sky-500 shadow-2xs hover:shadow-md hover:shadow-sky-500/20 transition-all duration-200 cursor-pointer active:scale-90"
+                          title={`คลิกเพื่อคัดลอกอีเมล (${u.email})`}
                         >
-                          <Zap className="h-3.5 w-3.5 text-amber-300 animate-pulse" />
-                          <span>ใช้งานด้วยสิทธิ์นี้</span>
-                        </Button>
+                          <Copy className="h-3.5 w-3.5 transition-transform group-hover/copy:scale-110" />
+                        </button>
 
+                        {/* Luxury Edit Button with Shimmer & Animated Pencil */}
                         <Button
                           size="sm"
-                          variant="outline"
                           onClick={() => handleOpenEditUser(u)}
-                          className="rounded-xl font-bold text-xs h-9 px-3 border border-border/80 hover:bg-muted/80 gap-1.5 cursor-pointer"
+                          className="relative overflow-hidden group/edit h-8.5 px-3.5 rounded-xl font-bold text-xs bg-card hover:bg-gradient-to-r hover:from-primary hover:to-indigo-600 text-foreground hover:text-white border border-border/80 hover:border-transparent shadow-2xs hover:shadow-md hover:shadow-primary/20 transition-all duration-300 cursor-pointer active:scale-95 gap-1.5"
                         >
-                          <Edit3 className="h-3.5 w-3.5 text-muted-foreground" />
+                          <div className="absolute inset-0 -translate-x-full group-hover/edit:translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 pointer-events-none" />
+                          <Edit3 className="h-3.5 w-3.5 text-primary group-hover/edit:text-white transition-all duration-300 group-hover/edit:rotate-12 group-hover/edit:-translate-y-0.5" />
                           <span>แก้ไข</span>
                         </Button>
 
+                        {/* Danger Delete Button with Jiggle Animation */}
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-9 w-9 rounded-xl text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 transition-colors p-0 flex items-center justify-center cursor-pointer"
+                          className="group/del h-8.5 w-8.5 p-0 rounded-xl bg-card hover:bg-rose-500 text-rose-500 hover:text-white border border-border/70 hover:border-rose-500 shadow-2xs hover:shadow-md hover:shadow-rose-500/25 transition-all duration-200 flex items-center justify-center cursor-pointer active:scale-90"
                           onClick={() => handleDeleteUser(u)}
                           disabled={isPending}
                           title="ลบบัญชีผู้ใช้"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5 transition-all duration-200 group-hover/del:scale-110 group-hover/del:-rotate-12" />
                         </Button>
                       </div>
                     </div>
@@ -1893,9 +1908,9 @@ export function AdminBackofficeClient({
           ADD / EDIT STUDENT MODAL (DESIGN LUXURY)
           ============================================================ */}
       <Dialog open={isStudentModalOpen} onOpenChange={setIsStudentModalOpen}>
-        <DialogContent className="sm:max-w-lg p-0 overflow-hidden rounded-3xl border border-sky-500/30 bg-card shadow-2xl shadow-sky-500/15">
+        <DialogContent className="sm:max-w-lg p-0 max-h-[90vh] flex flex-col overflow-hidden rounded-3xl border border-sky-500/30 bg-card shadow-2xl shadow-sky-500/15">
           {/* Top Sky Iridescent Ambient Banner */}
-          <div className="relative bg-gradient-to-br from-sky-500/15 via-blue-500/10 to-indigo-500/10 px-6 pt-6 pb-4 border-b border-border/70">
+          <div className="relative bg-gradient-to-br from-sky-500/15 via-blue-500/10 to-indigo-500/10 px-6 pt-6 pb-4 border-b border-border/70 shrink-0">
             {/* Glossy reflection line */}
             <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-sky-500/50 to-transparent pointer-events-none" />
 
@@ -1921,17 +1936,18 @@ export function AdminBackofficeClient({
             </div>
           </div>
 
-          <form onSubmit={handleSaveStudent} className="p-6 space-y-4">
+          <form onSubmit={handleSaveStudent} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
             <div className="grid grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <Label htmlFor="st-id" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
                   <Hash className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>รหัสนักเรียน (5 หลัก)</span>
+                  <span>รหัสนักเรียน</span>
                 </Label>
                 <Input
                   id="st-id"
                   required
-                  placeholder="เช่น 66025"
+                  placeholder="เช่น 68219100001"
                   value={studentForm.studentId}
                   onChange={(e) =>
                     setStudentForm((p) => ({ ...p, studentId: e.target.value }))
@@ -2054,7 +2070,9 @@ export function AdminBackofficeClient({
               </div>
             </div>
 
-            <DialogFooter className="pt-3 border-t border-border/70 flex items-center justify-end gap-2.5">
+            </div>
+
+            <DialogFooter className="px-6 py-4 bg-muted/20 border-t border-border/70 flex items-center justify-end gap-2.5 shrink-0">
               <Button
                 type="button"
                 variant="outline"
@@ -2090,9 +2108,9 @@ export function AdminBackofficeClient({
           ADD / EDIT USER MODAL (DESIGN LUXURY)
           ============================================================ */}
       <Dialog open={isUserModalOpen} onOpenChange={setIsUserModalOpen}>
-        <DialogContent className="sm:max-w-lg p-0 overflow-hidden rounded-3xl border border-primary/30 bg-card shadow-2xl shadow-primary/15">
+        <DialogContent className="sm:max-w-lg p-0 max-h-[90vh] flex flex-col overflow-hidden rounded-3xl border border-primary/30 bg-card shadow-2xl shadow-primary/15">
           {/* Top Royal Iridescent Ambient Banner */}
-          <div className="relative bg-gradient-to-br from-primary/15 via-indigo-600/10 to-emerald-500/10 px-6 pt-6 pb-4 border-b border-border/70">
+          <div className="relative bg-gradient-to-br from-primary/15 via-indigo-600/10 to-emerald-500/10 px-6 pt-6 pb-4 border-b border-border/70 shrink-0">
             {/* Glossy reflection line */}
             <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-primary/50 to-transparent pointer-events-none" />
 
@@ -2122,219 +2140,221 @@ export function AdminBackofficeClient({
             </div>
           </div>
 
-          <form onSubmit={handleSaveUser} className="p-6 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="u-name" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                <User className="h-3.5 w-3.5 text-primary" />
-                <span>ชื่อ - นามสกุล / ตำแหน่ง</span>
-              </Label>
-              <Input
-                id="u-name"
-                required
-                placeholder="เช่น ครูสมชาย ที่ปรึกษา ม.4/1"
-                value={userForm.name}
-                onChange={(e) =>
-                  setUserForm((p) => ({ ...p, name: e.target.value }))
-                }
-                className="h-11 rounded-xl text-sm bg-background/80 border-border/80 focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="u-email" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                <Mail className="h-3.5 w-3.5 text-primary" />
-                <span>อีเมลเข้าสู่ระบบ (Email Login)</span>
-              </Label>
-              <Input
-                id="u-email"
-                type="email"
-                required
-                placeholder="teacher2@school.ac.th"
-                value={userForm.email}
-                onChange={(e) =>
-                  setUserForm((p) => ({ ...p, email: e.target.value }))
-                }
-                className="h-11 rounded-xl text-sm font-mono bg-background/80 border-border/80 focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-
-            {/* Interactive Visual Role Cards (แทนที่ native select เดิม) */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                <Shield className="h-3.5 w-3.5 text-primary" />
-                <span>ระดับสิทธิ์การใช้งาน (Role)</span>
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                {/* TEACHER Role Card */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setUserForm((p) => ({ ...p, role: "TEACHER" }))
-                  }
-                  className={cn(
-                    "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group",
-                    userForm.role === "TEACHER"
-                      ? "border-emerald-500 bg-emerald-500/15 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/30"
-                      : "border-border/80 bg-background/60 hover:bg-muted/50 text-muted-foreground"
-                  )}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className={cn(
-                      "inline-flex items-center gap-1 text-xs font-black",
-                      userForm.role === "TEACHER" ? "text-emerald-800 dark:text-emerald-300" : "text-foreground"
-                    )}>
-                      <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
-                      <span>TEACHER</span>
-                    </span>
-                    {userForm.role === "TEACHER" && (
-                      <span className="h-4 w-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                        <Check className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10.5px] font-semibold text-muted-foreground mt-1">
-                    ครูที่ปรึกษา (ประจำชั้น)
-                  </span>
-                  <span className="text-[9.5px] text-muted-foreground/80 mt-0.5 line-clamp-1">
-                    เช็คชื่อ & อนุมัติแก้แถวห้องที่ดูแล
-                  </span>
-                </button>
-
-                {/* ADMIN Role Card */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setUserForm((p) => ({ ...p, role: "ADMIN" }))
-                  }
-                  className={cn(
-                    "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group",
-                    userForm.role === "ADMIN"
-                      ? "border-amber-500 bg-amber-500/15 shadow-md shadow-amber-500/10 ring-2 ring-amber-500/30"
-                      : "border-border/80 bg-background/60 hover:bg-muted/50 text-muted-foreground"
-                  )}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className={cn(
-                      "inline-flex items-center gap-1 text-xs font-black",
-                      userForm.role === "ADMIN" ? "text-amber-800 dark:text-amber-300" : "text-foreground"
-                    )}>
-                      <Crown className="h-3.5 w-3.5 text-amber-500" />
-                      <span>ADMIN</span>
-                    </span>
-                    {userForm.role === "ADMIN" && (
-                      <span className="h-4 w-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">
-                        <Check className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10.5px] font-semibold text-muted-foreground mt-1">
-                    ฝ่ายปกครอง (ผู้ดูแลระบบ)
-                  </span>
-                  <span className="text-[9.5px] text-muted-foreground/80 mt-0.5 line-clamp-1">
-                    สิทธิ์เต็ม 100% ดูแลทั้งโรงเรียน
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {/* Assigned Classrooms (เฉพาะครูที่ปรึกษา TEACHER) */}
-            {userForm.role === "TEACHER" && (
-              <div className="space-y-2.5 p-3.5 rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/25">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="u-classrooms" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                    <School className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>ห้องเรียนที่รับผิดชอบ (จำกัดสิทธิ์เฉพาะห้องนี้)</span>
-                  </Label>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
-                    จำกัดสิทธิ์รายห้อง 🔒
-                  </span>
-                </div>
-
+          <form onSubmit={handleSaveUser} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="u-name" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  <User className="h-3.5 w-3.5 text-primary" />
+                  <span>ชื่อ - นามสกุล / ตำแหน่ง</span>
+                </Label>
                 <Input
-                  id="u-classrooms"
-                  placeholder="เช่น ม.4/1 หรือ ม.4/1, ม.4/2"
-                  value={userForm.classrooms || ""}
+                  id="u-name"
+                  required
+                  placeholder="เช่น ครูสมศรี ที่ปรึกษา"
+                  value={userForm.name}
                   onChange={(e) =>
-                    setUserForm((p) => ({ ...p, classrooms: e.target.value }))
+                    setUserForm((p) => ({ ...p, name: e.target.value }))
                   }
-                  className="h-10.5 rounded-xl text-xs font-bold bg-background/90 border-border/80 focus:ring-2 focus:ring-emerald-500/20"
+                  className="h-11 rounded-xl text-sm bg-background/80 border-border/80 focus:ring-2 focus:ring-primary/20"
                 />
+              </div>
 
-                {/* Quick Toggle Classrooms Chips if classrooms exist */}
-                {initialData.classrooms.length > 0 && (
-                  <div className="space-y-1.5 pt-1">
-                    <p className="text-[10.5px] text-muted-foreground font-semibold">
-                      คลิกเลือกห้องเรียนที่มีในระบบด่วน:
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {initialData.classrooms.map((room) => {
-                        const currentList = (userForm.classrooms || "")
-                          .split(",")
-                          .map((c) => c.trim())
-                          .filter(Boolean);
-                        const isChecked = currentList.includes(room);
+              <div className="space-y-1.5">
+                <Label htmlFor="u-email" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  <Mail className="h-3.5 w-3.5 text-primary" />
+                  <span>อีเมลเข้าสู่ระบบ (Email Login)</span>
+                </Label>
+                <Input
+                  id="u-email"
+                  type="email"
+                  required
+                  placeholder="teacher2@school.ac.th"
+                  value={userForm.email}
+                  onChange={(e) =>
+                    setUserForm((p) => ({ ...p, email: e.target.value }))
+                  }
+                  className="h-11 rounded-xl text-sm font-mono bg-background/80 border-border/80 focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
 
-                        return (
-                          <button
-                            key={room}
-                            type="button"
-                            onClick={() => {
-                              let nextList: string[];
-                              if (isChecked) {
-                                nextList = currentList.filter((c) => c !== room);
-                              } else {
-                                nextList = [...currentList, room];
-                              }
-                              setUserForm((p) => ({
-                                ...p,
-                                classrooms: nextList.join(", "),
-                              }));
-                            }}
-                            className={cn(
-                              "px-2.5 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1",
-                              isChecked
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                                : "bg-card text-muted-foreground border-border/80 hover:border-emerald-500/40"
-                            )}
-                          >
-                            {isChecked && <Check className="h-3 w-3" />}
-                            <span>{room}</span>
-                          </button>
-                        );
-                      })}
+              {/* Interactive Visual Role Cards (แทนที่ native select เดิม) */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  <Shield className="h-3.5 w-3.5 text-primary" />
+                  <span>ระดับสิทธิ์การใช้งาน (Role)</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* TEACHER Role Card */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUserForm((p) => ({ ...p, role: "TEACHER" }))
+                    }
+                    className={cn(
+                      "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group",
+                      userForm.role === "TEACHER"
+                        ? "border-emerald-500 bg-emerald-500/15 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/30"
+                        : "border-border/80 bg-background/60 hover:bg-muted/50 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 text-xs font-black",
+                        userForm.role === "TEACHER" ? "text-emerald-800 dark:text-emerald-300" : "text-foreground"
+                      )}>
+                        <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>TEACHER</span>
+                      </span>
+                      {userForm.role === "TEACHER" && (
+                        <span className="h-4 w-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
+                          <Check className="h-2.5 w-2.5" />
+                        </span>
+                      )}
                     </div>
-                  </div>
-                )}
+                    <span className="text-[10.5px] font-semibold text-muted-foreground mt-1">
+                      ครูที่ปรึกษา (ประจำชั้น)
+                    </span>
+                    <span className="text-[9.5px] text-muted-foreground/80 mt-0.5 line-clamp-1">
+                      เช็คชื่อ & อนุมัติแก้แถวห้องที่ดูแล
+                    </span>
+                  </button>
 
-                <p className="text-[10.5px] text-muted-foreground leading-relaxed">
-                  ครูจะสามารถเห็นและบันทึกการเช็คชื่อได้<b>เฉพาะห้องที่ระบุเท่านั้น</b> (สามารถระบุห้องเดียวหรือคั่นด้วยจุลภาค เช่น <code>ม.4/1, ม.4/2</code> หรือเว้นว่างหากดูแลได้ทุกห้อง)
+                  {/* ADMIN Role Card */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUserForm((p) => ({ ...p, role: "ADMIN" }))
+                    }
+                    className={cn(
+                      "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group",
+                      userForm.role === "ADMIN"
+                        ? "border-amber-500 bg-amber-500/15 shadow-md shadow-amber-500/10 ring-2 ring-amber-500/30"
+                        : "border-border/80 bg-background/60 hover:bg-muted/50 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 text-xs font-black",
+                        userForm.role === "ADMIN" ? "text-amber-800 dark:text-amber-300" : "text-foreground"
+                      )}>
+                        <Crown className="h-3.5 w-3.5 text-amber-500" />
+                        <span>ADMIN</span>
+                      </span>
+                      {userForm.role === "ADMIN" && (
+                        <span className="h-4 w-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">
+                          <Check className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10.5px] font-semibold text-muted-foreground mt-1">
+                      ฝ่ายปกครอง (ผู้ดูแลระบบ)
+                    </span>
+                    <span className="text-[9.5px] text-muted-foreground/80 mt-0.5 line-clamp-1">
+                      สิทธิ์เต็ม 100% ดูแลทั้งโรงเรียน
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Assigned Classrooms (เฉพาะครูที่ปรึกษา TEACHER) */}
+              {userForm.role === "TEACHER" && (
+                <div className="space-y-2.5 p-3.5 rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/25">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="u-classrooms" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                      <School className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>ห้องเรียนที่รับผิดชอบ (จำกัดสิทธิ์เฉพาะห้องนี้)</span>
+                    </Label>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
+                      จำกัดสิทธิ์รายห้อง 🔒
+                    </span>
+                  </div>
+
+                  <Input
+                    id="u-classrooms"
+                    placeholder="เช่น ปวช.2/1 หรือ ม.4/1, ม.4/2"
+                    value={userForm.classrooms || ""}
+                    onChange={(e) =>
+                      setUserForm((p) => ({ ...p, classrooms: e.target.value }))
+                    }
+                    className="h-10.5 rounded-xl text-xs font-bold bg-background/90 border-border/80 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+
+                  {/* Quick Toggle Classrooms Chips if classrooms exist */}
+                  {initialData.classrooms.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-[10.5px] text-muted-foreground font-semibold">
+                        คลิกเลือกห้องเรียนที่มีในระบบด่วน:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {initialData.classrooms.map((room) => {
+                          const currentList = (userForm.classrooms || "")
+                            .split(",")
+                            .map((c) => c.trim())
+                            .filter(Boolean);
+                          const isChecked = currentList.includes(room);
+
+                          return (
+                            <button
+                              key={room}
+                              type="button"
+                              onClick={() => {
+                                let nextList: string[];
+                                if (isChecked) {
+                                  nextList = currentList.filter((c) => c !== room);
+                                } else {
+                                  nextList = [...currentList, room];
+                                }
+                                setUserForm((p) => ({
+                                  ...p,
+                                  classrooms: nextList.join(", "),
+                                }));
+                              }}
+                              className={cn(
+                                "px-2.5 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1",
+                                isChecked
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                  : "bg-card text-muted-foreground border-border/80 hover:border-emerald-500/40"
+                              )}
+                            >
+                              {isChecked && <Check className="h-3 w-3" />}
+                              <span>{room}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[10.5px] text-muted-foreground leading-relaxed">
+                    ครูจะสามารถเห็นและบันทึกการเช็คชื่อได้<b>เฉพาะห้องที่ระบุเท่านั้น</b> (สามารถระบุห้องเดียวหรือคั่นด้วยจุลภาค เช่น <code>ม.4/1, ม.4/2</code> หรือเว้นว่างหากดูแลได้ทุกห้อง)
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="u-pass" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  <KeyRound className="h-3.5 w-3.5 text-primary" />
+                  <span>
+                    รหัสผ่าน (Password) {userForm.id && <span className="text-muted-foreground font-normal">(เว้นว่างหากไม่ต้องการเปลี่ยน)</span>}
+                  </span>
+                </Label>
+                <Input
+                  id="u-pass"
+                  type="text"
+                  placeholder="password123"
+                  value={userForm.password}
+                  onChange={(e) =>
+                    setUserForm((p) => ({ ...p, password: e.target.value }))
+                  }
+                  className="h-10.5 rounded-xl font-mono text-sm bg-background/80 border-border/80 focus:ring-2 focus:ring-primary/20"
+                />
+                <p className="text-[10.5px] text-muted-foreground">
+                  รหัสผ่านเริ่มต้นสำหรับบัญชีทดสอบในระบบคือ <code className="font-mono text-primary font-bold">password123</code>
                 </p>
               </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="u-pass" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                <KeyRound className="h-3.5 w-3.5 text-primary" />
-                <span>
-                  รหัสผ่าน (Password) {userForm.id && <span className="text-muted-foreground font-normal">(เว้นว่างหากไม่ต้องการเปลี่ยน)</span>}
-                </span>
-              </Label>
-              <Input
-                id="u-pass"
-                type="text"
-                placeholder="password123"
-                value={userForm.password}
-                onChange={(e) =>
-                  setUserForm((p) => ({ ...p, password: e.target.value }))
-                }
-                className="h-10.5 rounded-xl font-mono text-sm bg-background/80 border-border/80 focus:ring-2 focus:ring-primary/20"
-              />
-              <p className="text-[10.5px] text-muted-foreground">
-                รหัสผ่านเริ่มต้นสำหรับบัญชีทดสอบในระบบคือ <code className="font-mono text-primary font-bold">password123</code>
-              </p>
             </div>
 
-            <DialogFooter className="pt-3 border-t border-border/70 flex items-center justify-end gap-2.5">
+            <DialogFooter className="px-6 py-4 bg-muted/20 border-t border-border/70 flex items-center justify-end gap-2.5 shrink-0">
               <Button
                 type="button"
                 variant="outline"

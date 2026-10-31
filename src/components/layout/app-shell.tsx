@@ -137,7 +137,146 @@ export function AppShell({ children, session }: AppShellProps) {
 
   const { theme, setTheme } = useTheme();
   const isLoginPage = pathname?.startsWith("/login");
+  const isPortalPage = pathname?.startsWith("/portal");
 
+  // 1. Dedicated Student Portal Layout (Only for students and parents)
+  if (isPortalPage) {
+    return (
+      <div className="min-h-dvh flex flex-col bg-background relative selection:bg-primary/20 selection:text-primary">
+        {/* Top Header specifically for Student & Parent Portal */}
+        <header className="sticky top-0 z-30 h-16 sm:h-18 w-full border-b border-border/80 bg-card/85 backdrop-blur-md px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-3 shadow-2xs">
+          {/* Left: Brand + Student Portal badge */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Link
+              href="/portal"
+              className="flex items-center gap-2 sm:gap-2.5 hover:opacity-90 transition-opacity min-w-0"
+            >
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-primary to-primary/80 text-primary-foreground shadow-sm shrink-0">
+                <School className="h-5 w-5" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm sm:text-base font-black tracking-tight text-foreground flex items-center gap-1.5 truncate">
+                  <span>LineCheck+</span>
+                  <span className="hidden md:inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary border border-primary/20 shrink-0">
+                    STUDENT PORTAL
+                  </span>
+                </span>
+                <span className="text-[10px] sm:text-[11px] text-muted-foreground font-medium hidden sm:inline truncate">
+                  ระบบเช็คเวลาเข้าแถวและแก้กิจกรรมสำหรับนักเรียนและผู้ปกครอง
+                </span>
+              </div>
+            </Link>
+          </div>
+
+          {/* Right: Theme Controls + Staff Link */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Quick Theme Switcher */}
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer shadow-2xs shrink-0"
+              title="เปลี่ยนธีม สว่าง/มืด"
+            >
+              {mounted && theme === "dark" ? (
+                <Sun className="h-4 w-4 text-amber-400" />
+              ) : (
+                <Moon className="h-4 w-4 text-slate-700" />
+              )}
+            </button>
+
+            {/* Palette Popover */}
+            <Popover>
+              <PopoverTrigger
+                title="ปรับแต่งชุดสีและสไตล์พื้นหลัง"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer shadow-2xs shrink-0"
+              >
+                <Palette className="h-4 w-4 text-primary" />
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-68 p-4 space-y-3 rounded-2xl">
+                <div>
+                  <span className="text-xs font-bold text-foreground block">
+                    โทนสีหลัก (Accent Color)
+                  </span>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {COLOR_THEMES.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setColorTheme(t.id)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-xl border p-1.5 text-xs font-medium transition-all cursor-pointer",
+                          colorTheme === t.id
+                            ? "border-primary bg-primary/10 shadow-xs ring-2 ring-primary/20"
+                            : "border-border hover:bg-muted"
+                        )}
+                      >
+                        <span className={cn("h-3.5 w-3.5 rounded-full shrink-0", t.swatch)} />
+                        <span className="truncate text-[11px]">{t.name.split(" ")[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border">
+                  <span className="text-xs font-bold text-foreground block">
+                    สไตล์พื้นหลัง (Background Style)
+                  </span>
+                  <div className="grid grid-cols-1 gap-1.5 mt-2">
+                    {BACKGROUND_STYLES.map((bg) => (
+                      <button
+                        key={bg.id}
+                        type="button"
+                        onClick={() => setBgStyle(bg.id)}
+                        className={cn(
+                          "flex items-center justify-between rounded-xl border px-2.5 py-1.5 text-xs text-left transition-all cursor-pointer",
+                          bgStyle === bg.id
+                            ? "border-primary bg-primary/10 font-bold"
+                            : "border-border hover:bg-muted text-muted-foreground"
+                        )}
+                      >
+                        <span className="text-xs">{bg.label}</span>
+                        {bgStyle === bg.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Staff / Teacher Action Link */}
+            {session?.user ? (
+              <Link
+                href="/dashboard"
+                className="flex items-center gap-1 sm:gap-1.5 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-primary transition-all shadow-2xs shrink-0 whitespace-nowrap"
+              >
+                <span>หน้าครูผู้สอน</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="flex items-center gap-1 sm:gap-1.5 rounded-xl border border-border/80 bg-card hover:bg-muted px-2.5 sm:px-3 py-1.5 text-xs font-bold text-foreground transition-all shadow-2xs shrink-0 whitespace-nowrap"
+              >
+                <span>เข้าสู่ระบบครู</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </div>
+        </header>
+
+        {/* Main Content (Centered, clean full-width without teacher sidebar) */}
+        <main className="flex-1 w-full max-w-6xl mx-auto px-4 py-6 sm:py-8">
+          {children}
+        </main>
+
+        <footer className="py-4 text-center text-xs text-muted-foreground/80 border-t border-border/40">
+          LineCheck+ • ระบบเช็คชื่อหน้าเสาธงและตรวจสอบเวลาเข้าแถวสำหรับนักเรียนและผู้ปกครอง
+        </footer>
+      </div>
+    );
+  }
+
+  // 2. Standalone Login Page Layout
   if (isLoginPage) {
     return (
       <div className="min-h-dvh flex flex-col bg-background relative selection:bg-primary/20 selection:text-primary">

@@ -4,6 +4,10 @@ out/
 dist/
 build/
 .env
+.env*.local
+.env.local
+.env.production
+.env.development
 .git-token
 *.log
 .DS_Store

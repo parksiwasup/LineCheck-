@@ -409,18 +409,33 @@ export async function deleteAttendanceByDateAction(
 ): Promise<{ success: boolean; message: string }> {
   try {
     const targetDate = toUTCDateOnly(dateIso);
+
+    // 1. ลบ AttendanceRecord ของวันที่ระบุ
     const res = await prisma.attendanceRecord.deleteMany({
       where: { date: targetDate },
+    });
+
+    // 2. ลบ RemedialRecord ที่ผูกกับวันที่ขาดนี้ หรือผูกกับวันคลินิกนี้ เพื่อป้องกันข้อมูลค้างหลังบ้าน
+    await prisma.remedialRecord.deleteMany({
+      where: {
+        OR: [
+          { targetDate },
+          { activityTitle: { contains: `(${dateIso})` } },
+        ],
+      },
     });
 
     revalidatePath("/admin");
     revalidatePath("/attendance/check");
     revalidatePath("/attendance/remedial");
+    revalidatePath("/attendance/calendar");
     revalidatePath("/dashboard");
+    revalidatePath("/portal");
+    revalidatePath("/grades");
 
     return {
       success: true,
-      message: `ลบประวัติการเช็คชื่อของวันที่ ${dateIso} จำนวน ${res.count} รายการเรียบร้อยแล้ว`,
+      message: `ลบประวัติการเช็คชื่อและการแก้แถวของวันที่ ${dateIso} จำนวน ${res.count} รายการเรียบร้อยแล้ว`,
     };
   } catch {
     return {

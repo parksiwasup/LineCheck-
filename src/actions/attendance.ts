@@ -259,8 +259,23 @@ export async function saveDailyAttendanceAction(
   }
 
   try {
-    await prisma.$transaction(
-      records.map((rec) =>
+    const absentStudentIds = records
+      .filter((r) => r.status === "ABSENT")
+      .map((r) => r.studentId);
+
+    await prisma.$transaction([
+      // หากมีการบันทึกเช็คชื่อว่า "ขาด" ให้ล้างประวัติการแก้แถวเก่าของวันนี้ออก เพื่อป้องกันข้อมูลค้าง
+      ...(absentStudentIds.length > 0
+        ? [
+            prisma.remedialRecord.deleteMany({
+              where: {
+                targetDate,
+                studentId: { in: absentStudentIds },
+              },
+            }),
+          ]
+        : []),
+      ...records.map((rec) =>
         prisma.attendanceRecord.upsert({
           where: {
             studentId_date: {
@@ -281,8 +296,8 @@ export async function saveDailyAttendanceAction(
             recordedById: operator?.id ?? null,
           },
         })
-      )
-    );
+      ),
+    ]);
 
     revalidatePath("/attendance/check");
     revalidatePath("/attendance/remedial");

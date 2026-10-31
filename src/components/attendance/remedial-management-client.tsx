@@ -45,6 +45,7 @@ import {
 import * as XLSX from "xlsx";
 import { PrintableNoticeModal } from "./printable-notice-modal";
 import { StudentMonthlyCalendarModal } from "./student-monthly-calendar";
+import { RemedialClinicDialog } from "./remedial-clinic-dialog";
 import {
   submitRemedialTaskAction,
   reviewRemedialTaskAction,
@@ -183,6 +184,7 @@ export function RemedialManagementClient({
     );
   const [calendarStudentCode, setCalendarStudentCode] = React.useState<string | null>(null);
   const [isFormDialogOpen, setIsFormDialogOpen] = React.useState(false);
+  const [remedialTargetDate, setRemedialTargetDate] = React.useState<string | null>(null);
   const [isPrintNoticeOpen, setIsPrintNoticeOpen] = React.useState(false);
   const [imagePreview, setImagePreview] = React.useState<string | null>(null);
   const [isUploadingProof, setIsUploadingProof] = React.useState(false);
@@ -328,9 +330,12 @@ export function RemedialManagementClient({
         (d) => d.remedialStatus === "NONE" || d.remedialStatus === "REJECTED"
       ) ?? student.absenceDates[0];
 
+    const targetIso = specificDateIso ?? availableAbsence?.dateIso ?? "";
+    setRemedialTargetDate(targetIso);
+
     form.reset({
       studentId: student.id,
-      targetDate: specificDateIso ?? availableAbsence?.dateIso ?? "",
+      targetDate: targetIso,
       activityTitle: PRESET_ACTIVITIES[0],
       description: "",
       hoursEarned: 1,
@@ -799,7 +804,7 @@ export function RemedialManagementClient({
                 {initialReport.allRemedialLogs.length} ครั้ง
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                คลินิกวันหยุด พ.-พฤ. + จิตอาสา
+                คลินิกแก้แถววันพุธ-พฤหัสบดี
               </p>
             </div>
             <div className="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0">
@@ -944,7 +949,7 @@ export function RemedialManagementClient({
                 รายชื่อนักเรียนและสถานะการแก้แถว (คลินิกวันหยุด พุธ-พฤหัสบดี & เส้นตายวันอาทิตย์ 23:59 น.)
               </CardTitle>
               <CardDescription>
-                บังคับเข้าแถว จันทร์ • อังคาร • ศุกร์ (3 วัน/สัปดาห์) • หากขาดให้เสียสิทธิ์วันหยุดมาเข้าคลินิกแก้แถวในวันพุธ/พฤหัสบดี (1 วันหยุด = ล้าง 1 วันขาด แบบ FIFO) หรือส่งงานจิตอาสา
+                บังคับเข้าแถว จันทร์ • อังคาร • ศุกร์ (3 วัน/สัปดาห์) • หากขาดให้เสียสิทธิ์วันหยุดมาเข้าคลินิกแก้แถวในวันพุธหรือวันพฤหัสบดี (1 วันคลินิก = ล้าง 1 วันขาด แบบ FIFO)
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -1275,327 +1280,17 @@ export function RemedialManagementClient({
         </TabsContent>
       </Tabs>
 
-      {/* Remedial Submission Dialog Form */}
-      <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              บันทึกกิจกรรมแก้แถว (Remedial Activity Form)
-            </DialogTitle>
-            <DialogDescription>
-              เลือกวันที่นักเรียนขาดแถวเพื่อนำกิจกรรมบำเพ็ญประโยชน์มาชดเชยเวลาเข้าแถวให้ครบเกณฑ์ 45 ครั้ง
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            onSubmit={form.handleSubmit(onSubmitRemedialForm)}
-            className="space-y-4 mt-2"
-          >
-            {/* Select Student */}
-            <div className="space-y-1.5">
-              <Label htmlFor="studentId">นักเรียนที่ต้องการแก้แถว</Label>
-              <select
-                id="studentId"
-                {...form.register("studentId", {
-                  onChange: (e) => {
-                    const st = initialReport.deficitStudents.find(
-                      (item) => item.id === e.target.value
-                    );
-                    if (st) {
-                      setSelectedStudent(st);
-                      const firstAvailable =
-                        st.absenceDates.find(
-                          (d) =>
-                            d.remedialStatus === "NONE" ||
-                            d.remedialStatus === "REJECTED"
-                        ) ?? st.absenceDates[0];
-                      form.setValue(
-                        "targetDate",
-                        firstAvailable?.dateIso ?? ""
-                      );
-                    }
-                  },
-                })}
-                className="flex h-10 w-full rounded-xl border border-input bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {initialReport.deficitStudents.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.studentId} - {st.fullName} ({st.classroom}) • ปัจจุบัน{" "}
-                    {st.effectiveAttendancePercent}%
-                  </option>
-                ))}
-              </select>
-              {form.formState.errors.studentId && (
-                <p className="text-xs text-rose-500">
-                  {form.formState.errors.studentId.message}
-                </p>
-              )}
-            </div>
-
-            {/* Select Target Absence Date to Offset */}
-            <div className="space-y-1.5">
-              <Label htmlFor="targetDate">
-                เลือกวันที่ขาดแถวที่นำมาแก้ (Target Absence Date)
-              </Label>
-              {activeModalStudent &&
-              activeModalStudent.absenceDates.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {activeModalStudent.absenceDates.map((abs) => {
-                    const isSelected =
-                      form.watch("targetDate") === abs.dateIso;
-                    const isUsed =
-                      abs.remedialStatus === "APPROVED" ||
-                      abs.remedialStatus === "PENDING";
-                    return (
-                      <button
-                        key={abs.dateIso}
-                        type="button"
-                        disabled={isUsed}
-                        onClick={() =>
-                          form.setValue("targetDate", abs.dateIso, {
-                            shouldValidate: true,
-                          })
-                        }
-                        className={cn(
-                          "flex flex-col items-start rounded-xl border p-2.5 text-left text-xs transition-all cursor-pointer",
-                          isSelected
-                            ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                            : "border-border bg-card hover:bg-accent",
-                          isUsed && "opacity-50 cursor-not-allowed"
-                        )}
-                      >
-                        <span className="font-semibold text-foreground">
-                          {format(new Date(abs.dateIso), "d MMM yyyy", {
-                            locale: th,
-                          })}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[10px] mt-0.5 font-medium",
-                            isUsed
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : abs.isOverdueCrossWeek
-                              ? "text-rose-600 dark:text-rose-400"
-                              : "text-amber-600 dark:text-amber-400"
-                          )}
-                        >
-                          {isUsed
-                            ? abs.activityTitle
-                              ? `แก้แล้ว (${abs.activityTitle})`
-                              : "แก้แถวแล้ว"
-                            : abs.isOverdueCrossWeek
-                            ? "ค้างสะสมข้ามสัปดาห์!"
-                            : "รอนัดแก้รอบนี้"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <Input type="date" {...form.register("targetDate")} />
-              )}
-              {form.formState.errors.targetDate && (
-                <p className="text-xs text-rose-500">
-                  {form.formState.errors.targetDate.message}
-                </p>
-              )}
-            </div>
-
-            {/* Activity Title + Quick Presets */}
-            <div className="space-y-1.5">
-              <Label htmlFor="activityTitle">หัวข้อกิจกรรมบำเพ็ญประโยชน์</Label>
-              <Input
-                id="activityTitle"
-                placeholder="เช่น จิตอาสาทำความสะอาดหอประชุม..."
-                {...form.register("activityTitle")}
-              />
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {PRESET_ACTIVITIES.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() =>
-                      form.setValue("activityTitle", preset, {
-                        shouldValidate: true,
-                      })
-                    }
-                    className="rounded-lg border border-border/70 bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    + {preset}
-                  </button>
-                ))}
-              </div>
-              {form.formState.errors.activityTitle && (
-                <p className="text-xs text-rose-500">
-                  {form.formState.errors.activityTitle.message}
-                </p>
-              )}
-            </div>
-
-            {/* Description */}
-            <div className="space-y-1.5">
-              <Label htmlFor="description">รายละเอียดการปฏิบัติกิจกรรม</Label>
-              <Textarea
-                id="description"
-                rows={3}
-                placeholder="ระบุสถานที่ ครูผู้ควบคุม และสิ่งที่ได้ปฏิบัติ..."
-                {...form.register("description")}
-              />
-              {form.formState.errors.description && (
-                <p className="text-xs text-rose-500">
-                  {form.formState.errors.description.message}
-                </p>
-              )}
-            </div>
-
-            {/* Hours Earned & Optional Proof URL */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="hoursEarned">จำนวนชั่วโมงจิตอาสา (ชม.)</Label>
-                <Input
-                  id="hoursEarned"
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  max="12"
-                  {...form.register("hoursEarned", { valueAsNumber: true })}
-                />
-                {form.formState.errors.hoursEarned && (
-                  <p className="text-xs text-rose-500">
-                    {form.formState.errors.hoursEarned.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Direct Image Upload for Proof */}
-            <div className="space-y-2 rounded-xl border border-border/80 bg-muted/20 p-3.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold flex items-center gap-1.5">
-                  <ImageIcon className="h-4 w-4 text-primary" />
-                  <span>รูปภาพหลักฐานการทำกิจกรรมจิตอาสา (Direct Upload)</span>
-                </Label>
-                {imagePreview && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImagePreview(null);
-                      form.setValue("proofUrl", "");
-                    }}
-                    className="text-xs text-rose-500 hover:underline cursor-pointer"
-                  >
-                    ลบรูปภาพ
-                  </button>
-                )}
-              </div>
-
-              {imagePreview ? (
-                <div className="relative rounded-xl border border-border p-2.5 bg-card flex items-center gap-3">
-                  <img
-                    src={imagePreview}
-                    alt="Proof preview"
-                    className="h-16 w-16 rounded-lg object-cover border border-border shadow-xs"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      แนบรูปภาพหลักฐานเรียบร้อยแล้ว
-                    </p>
-                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                      {form.watch("proofUrl") || "พร้อมบันทึกลงในระบบ"}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => proofFileInputRef.current?.click()}
-                    className="h-8 text-xs shrink-0"
-                  >
-                    เปลี่ยนรูป
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  onClick={() => proofFileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border bg-card p-4 text-center hover:border-primary/50 hover:bg-muted/40 cursor-pointer transition-all"
-                >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    {isUploadingProof ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Camera className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold">
-                      {isUploadingProof
-                        ? "กำลังอัปโหลดรูปภาพ..."
-                        : "คลิกเพื่อถ่ายรูป หรือเลือกรูปภาพจากเครื่อง"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      รองรับไฟล์ JPG, PNG, WebP (ถ่ายภาพจากมือถือหรือแท็บเล็ตได้)
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <input
-                ref={proofFileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleDirectImageUpload}
-                className="hidden"
-              />
-
-              <div className="flex items-center gap-2 pt-1">
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                  หรือวาง URL:
-                </span>
-                <Input
-                  id="proofUrl"
-                  placeholder="https://..."
-                  className="h-7 text-xs flex-1"
-                  {...form.register("proofUrl")}
-                  onChange={(e) => {
-                    form.setValue("proofUrl", e.target.value);
-                    if (
-                      e.target.value.startsWith("http") ||
-                      e.target.value.startsWith("/")
-                    ) {
-                      setImagePreview(e.target.value);
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsFormDialogOpen(false)}
-              >
-                ยกเลิก
-              </Button>
-              <Button type="submit" disabled={isPending}>
-                {isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>กำลังบันทึก...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>บันทึกข้อมูลแก้แถว</span>
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Remedial Submission Dialog (Clinic & Activity) */}
+      <RemedialClinicDialog
+        open={isFormDialogOpen}
+        onOpenChange={setIsFormDialogOpen}
+        studentIdOrCode={selectedStudent?.studentId ?? null}
+        initialTargetDateIso={remedialTargetDate}
+        onSuccess={() => {
+          setIsFormDialogOpen(false);
+          router.refresh();
+        }}
+      />
 
       {/* Printable Deficit Notice Modal (< 80%) */}
       <PrintableNoticeModal

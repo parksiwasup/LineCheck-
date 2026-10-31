@@ -100,18 +100,18 @@ export function ThreeDDonutChart({ data, totalStudents, students = [] }: ThreeDD
   return (
     <div className="relative flex flex-col items-center justify-between w-full select-none">
       {/* Top Controls: 3D Spin Button & Instruction */}
-      <div className="w-full flex items-center justify-between px-1 mb-2">
-        <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-          <Sparkles className="h-3 w-3 text-amber-500 animate-pulse" />
-          <span>คลิกชิ้นโดนัทเพื่อดูรายชื่อ</span>
+      <div className="w-full flex items-center justify-between gap-2 px-1 mb-2">
+        <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 min-w-0">
+          <Sparkles className="h-3 w-3 text-amber-500 shrink-0 animate-pulse" />
+          <span className="truncate">คลิกชิ้นโดนัทเพื่อดูรายชื่อ</span>
         </span>
         <button
           type="button"
           onClick={handleToggleSpin}
-          className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 hover:bg-muted/70 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+          className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 hover:bg-muted/70 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap"
           title="หมุนสลับมุมมอง 3D 180 องศา"
         >
-          <RotateCw className="h-3 w-3" />
+          <RotateCw className="h-3 w-3 shrink-0" />
           <span>หมุน 3D</span>
         </button>
       </div>
@@ -135,20 +135,20 @@ export function ThreeDDonutChart({ data, totalStudents, students = [] }: ThreeDD
               <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#f43f5e" floodOpacity="0.45" />
             </filter>
             <filter id="slice-glow-green" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#10b981" floodOpacity="0.45" />
+              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#22c55e" floodOpacity="0.5" />
             </filter>
 
             {/* Depth Gradients for 3D Front Wall */}
-            {/* Green (Compliant) */}
+            {/* Green (Compliant) - Vibrant Modern Apple / Spring Green */}
             <linearGradient id="wall-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#047857" />
-              <stop offset="50%" stopColor="#059669" />
-              <stop offset="100%" stopColor="#065f46" />
+              <stop offset="0%" stopColor="#16a34a" />
+              <stop offset="50%" stopColor="#22c55e" />
+              <stop offset="100%" stopColor="#15803d" />
             </linearGradient>
             <linearGradient id="top-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#6ee7b7" />
-              <stop offset="60%" stopColor="#10b981" />
-              <stop offset="100%" stopColor="#059669" />
+              <stop offset="0%" stopColor="#86efac" />
+              <stop offset="45%" stopColor="#4ade80" />
+              <stop offset="100%" stopColor="#22c55e" />
             </linearGradient>
 
             {/* Rose (Deficit) */}
@@ -398,16 +398,16 @@ export function ThreeDDonutChart({ data, totalStudents, students = [] }: ThreeDD
           onClick={() => setSelectedSliceModal("compliant")}
           className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer ${
             hoveredSlice === "compliant"
-              ? "bg-emerald-500/15 border-emerald-500/50 shadow-xs font-semibold scale-[1.02]"
+              ? "bg-green-500/15 border-green-500/50 shadow-xs font-semibold scale-[1.02]"
               : "border-border/60 bg-muted/20 hover:bg-muted/40"
           }`}
         >
           <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 shadow-xs" />
+            <span className="h-3 w-3 rounded-full bg-gradient-to-r from-green-400 via-green-500 to-green-600 shadow-xs" />
             <span className="text-xs font-medium">ผ่านเกณฑ์ปกติ (≥ 80%)</span>
           </div>
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="font-bold text-green-600 dark:text-green-400">
               {compliantVal} คน
             </span>
             <span className="text-muted-foreground">({compliantPct}%)</span>

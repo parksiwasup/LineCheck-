@@ -466,7 +466,7 @@ export function DailyCheckClient({
                 วันนี้เป็นวันหยุดประจำสัปดาห์ (พุธ / พฤหัสบดี) — เปิดคลินิกให้เด็กติดขาดมาแก้แถว
               </h2>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                ติ๊ก <strong>&ldquo;มาแก้แถว&rdquo;</strong> ให้นักเรียนที่มาบำเพ็ญประโยชน์/รายงานตัวในวันนี้ ระบบจะนำไปหักล้างวันขาดที่เก่าที่สุดให้อัตโนมัติแบบ 1 ต่อ 1 (รองรับทั้งขาด จ.-อ. สัปดาห์นี้ และขาดค้างมาจากสัปดาห์ก่อน)
+                ติ๊ก <strong>&ldquo;มาแก้แถว&rdquo;</strong> ให้นักเรียนที่มารายงานตัวเข้าคลินิกแก้แถวในวันนี้ ระบบจะนำไปหักล้างวันขาดที่เก่าที่สุดให้อัตโนมัติแบบ 1 ต่อ 1 (รองรับทั้งขาด จ.-อ. สัปดาห์นี้ และขาดค้างมาจากสัปดาห์ก่อน)
               </p>
             </div>
           </div>
@@ -635,7 +635,7 @@ export function DailyCheckClient({
               <div className="relative">
                 <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="เช่น 66001 หรือ ธนกร..."
+                  placeholder="เช่น 68219100001 หรือ กมลพิชญ์..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 rounded-xl"
@@ -770,8 +770,8 @@ export function DailyCheckClient({
       <Card className="overflow-hidden">
         <div className="hidden sm:block border-b border-border/70 bg-muted/40 px-4 py-3 sm:px-6">
           <div className="grid grid-cols-12 items-center gap-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <div className="col-span-1">รหัส</div>
-            <div className="col-span-4">
+            <div className="col-span-2">รหัส</div>
+            <div className="col-span-3">
               {isMakeupHoliday
                 ? "ชื่อ - นามสกุล (คิวชดเชยวันขาด)"
                 : "ชื่อ - นามสกุล (สถานะสัปดาห์ จ. อ. ศ.)"}
@@ -884,13 +884,13 @@ export function DailyCheckClient({
                     >
                       {/* Mobile Top Row: Student ID + Full Name + Classroom + Calendar */}
                       <div className="flex items-center justify-between sm:contents">
-                        <div className="flex items-center gap-1.5 sm:col-span-1 group/code">
+                        <div className="flex items-center gap-1.5 sm:col-span-2 group/code shrink-0 min-w-0">
                           <button
                             type="button"
                             onClick={() =>
                               setCalendarStudentCode(student.studentId)
                             }
-                            className="font-mono text-xs sm:text-sm font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded-lg border border-primary/20 transition-colors cursor-pointer"
+                            className="font-mono text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded-lg border border-primary/20 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
                             title="คลิกเพื่อดูปฏิทินรายเดือนของนักเรียน"
                           >
                             {student.studentId}
@@ -911,13 +911,13 @@ export function DailyCheckClient({
                           </button>
                         </div>
 
-                        <div className="flex-1 px-2 sm:px-0 sm:col-span-4">
+                        <div className="flex-1 min-w-0 px-2 sm:px-0 sm:col-span-3">
                           <button
                             type="button"
                             onClick={() =>
                               setCalendarStudentCode(student.studentId)
                             }
-                            className="text-sm font-semibold sm:font-medium text-foreground hover:text-primary transition-colors truncate text-left cursor-pointer"
+                            className="text-sm font-semibold sm:font-medium text-foreground hover:text-primary transition-colors truncate text-left cursor-pointer block max-w-full"
                             title="คลิกดูปฏิทินรายเดือนของนักเรียน"
                           >
                             {student.fullName}

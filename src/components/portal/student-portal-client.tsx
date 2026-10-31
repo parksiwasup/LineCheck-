@@ -55,7 +55,7 @@ interface StudentPortalClientProps {
 
 export function StudentPortalClient({
   initialStudentId = "",
-  sampleIds = ["66001", "66003", "66005", "64001"],
+  sampleIds = ["68219100001", "68219100002", "68219100003", "68219100005"],
 }: StudentPortalClientProps) {
   const [searchId, setSearchId] = React.useState(initialStudentId);
   const [portalData, setPortalData] = React.useState<StudentPortalData | null>(null);
@@ -114,7 +114,7 @@ export function StudentPortalClient({
           ระบบตรวจสอบเวลาเข้าแถวและแก้กิจกรรม
         </h1>
         <p className="text-xs sm:text-sm text-muted-foreground max-w-lg mx-auto">
-          พิมพ์เลขประจำตัวนักเรียนเพื่อตรวจสอบสถิติเวลาเข้าแถว เกณฑ์การประเมิน (ผ./มผ.) และจำนวนชั่วโมงจิตอาสาที่ต้องแก้แถว
+          พิมพ์เลขประจำตัวนักเรียนเพื่อตรวจสอบสถิติเวลาเข้าแถว เกณฑ์การประเมิน (ผ./มผ.) และจำนวนวันที่ต้องเข้าคลินิกแก้แถว
         </p>
 
         {/* Search Input Box */}
@@ -130,7 +130,7 @@ export function StudentPortalClient({
               <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="พิมพ์เลขประจำตัวนักเรียน 5 หลัก (เช่น 67001)"
+                placeholder="พิมพ์เลขประจำตัวนักเรียน (เช่น 68219100001)"
                 value={searchId}
                 onChange={(e) => setSearchId(e.target.value)}
                 className="h-11 pl-10 text-sm rounded-xl font-medium shadow-xs"
@@ -153,8 +153,8 @@ export function StudentPortalClient({
           </form>
 
           {/* Quick sample chips */}
-          <div className="flex items-center justify-center gap-1.5 mt-2.5 text-xs text-muted-foreground">
-            <span>ตัวอย่างรหัส:</span>
+          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2.5 text-xs text-muted-foreground px-2">
+            <span className="shrink-0 font-medium">ตัวอย่างรหัส:</span>
             {sampleIds.map((id) => (
               <button
                 key={id}
@@ -163,7 +163,7 @@ export function StudentPortalClient({
                   setSearchId(id);
                   handleSearch(id);
                 }}
-                className="px-2 py-0.5 rounded-md bg-muted hover:bg-primary/10 hover:text-primary transition-colors font-mono cursor-pointer"
+                className="shrink-0 px-2 py-0.5 rounded-md bg-muted hover:bg-primary/10 hover:text-primary transition-colors font-mono cursor-pointer"
               >
                 {id}
               </button>
@@ -371,12 +371,12 @@ export function StudentPortalClient({
                 >
                   <p className="text-xs font-medium flex items-center gap-1">
                     <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    ชั่วโมงจิตอาสาที่ต้องแก้แถว
+                    จำนวนวันที่ต้องเข้าคลินิกแก้แถว
                   </p>
                   {metrics.isCompliant ? (
                     <div>
                       <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                        0 ชม. (ผ่านเกณฑ์)
+                        0 วัน (ผ่านเกณฑ์)
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         เวลาเรียนสุทธิครบตามระเบียบ 80% แล้ว
@@ -385,10 +385,10 @@ export function StudentPortalClient({
                   ) : (
                     <div>
                       <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                        ต้องทำเพิ่ม {metrics.hoursNeededToPass} ชม.
+                        ต้องเข้าคลินิกแก้ {metrics.daysNeededToPass} วัน
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        เทียบเท่าแก้แถวอีก {metrics.daysNeededToPass} วัน เพื่อให้ได้ 80%
+                        มาเข้าแถวรอบคลินิกวันพุธหรือพฤหัสฯ เพื่อให้ครบ 80%
                       </p>
                     </div>
                   )}
@@ -404,6 +404,7 @@ export function StudentPortalClient({
                 <StudentMonthlyCalendar
                   studentIdOrCode={portalData.student.studentId}
                   compact
+                  readOnly
                 />
               </div>
 
@@ -428,7 +429,7 @@ export function StudentPortalClient({
                           <TableHead className="text-xs">วันที่ขาดแถว</TableHead>
                           <TableHead className="text-xs">หมายเหตุ</TableHead>
                           <TableHead className="text-xs">สถานะการแก้แถว</TableHead>
-                          <TableHead className="text-xs">กิจกรรมจิตอาสา</TableHead>
+                          <TableHead className="text-xs">รอบคลินิกชดเชย</TableHead>
                           <TableHead className="text-xs text-right">หลักฐาน</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -488,7 +489,7 @@ export function StudentPortalClient({
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-1">
                 <p className="font-semibold text-foreground">💡 คำแนะนำสำหรับนักเรียนและผู้ปกครอง:</p>
                 <p className="text-muted-foreground leading-relaxed">
-                  หากนักเรียนยังมีผลการประเมินเป็น <strong>&ldquo;มผ.&rdquo;</strong> หรือมีวันที่ยังไม่ได้แก้แถว ขอให้นักเรียนติดต่อครูที่ปรึกษาประจำชั้นห้อง <strong>{student.classroom}</strong> เพื่อขอรับมอบหมายกิจกรรมจิตอาสา เช่น ช่วยเหลืองานห้องสมุด ทำความสะอาดบริเวณโรงเรียน หรือบำเพ็ญประโยชน์ เพื่อชดเชยเวลาเรียนให้ครบตามเกณฑ์ 80% ก่อนวันปิดภาคเรียน
+                  หากนักเรียนยังมีผลการประเมินเป็น <strong>&ldquo;มผ.&rdquo;</strong> หรือมีวันที่ยังไม่ได้แก้แถว ขอให้นักเรียนมาเข้าแถวรอบคลินิกแก้แถวในวันพุธหรือวันพฤหัสบดี หรือติดต่อครูที่ปรึกษาประจำชั้นห้อง <strong>{student.classroom}</strong> เพื่อเข้ารับการแก้กิจกรรมและบันทึกเวลาเรียนให้ครบตามเกณฑ์ 80% ก่อนวันปิดภาคเรียน
                 </p>
               </div>
 

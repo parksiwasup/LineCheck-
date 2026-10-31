@@ -115,6 +115,18 @@ export function evaluateStudentAttendanceRules(
   const absences: ResolvedAbsenceItem[] = [];
   const makeupDates: string[] = [];
 
+  // รวบรวมวันที่นักเรียนมีบันทึกเช็คชื่อมาเข้าคลินิกแก้แถว (พ./พฤ.) ไว้ก่อน
+  for (const rec of sortedAttendance) {
+    if (getSchoolDayKind(rec.date) === "MAKEUP_HOLIDAY") {
+      if (
+        rec.status === AttendanceStatus.PRESENT ||
+        rec.status === AttendanceStatus.LATE
+      ) {
+        makeupDates.push(formatDateISO(rec.date));
+      }
+    }
+  }
+
   for (const rec of sortedAttendance) {
     const kind = getSchoolDayKind(rec.date);
     const dateIso = formatDateISO(rec.date);
@@ -127,37 +139,53 @@ export function evaluateStudentAttendanceRules(
       if (!isAttended) {
         const mondayIso = formatDateISO(getUtcMonday(rec.date));
         const actRem = activityRemedyByTargetIso.get(dateIso);
+        // ตรวจสอบว่ากิจกรรมนี้เป็นบันทึกการมาเข้าคลินิกแก้แถว (พ./พฤ.) เจาะจงวันหรือไม่
+        const clinicMatch = actRem?.activityTitle.match(/\((\d{4}-\d{2}-\d{2})\)/);
+        const clinicDateIso = clinicMatch ? clinicMatch[1] : undefined;
+
+        // หากเป็นคลินิก ต้องยืนยันว่ามีบันทึกการมาคลินิกในวันนั้นจริงๆ ใน makeupDates
+        const isClinicConfirmed = clinicDateIso ? makeupDates.includes(clinicDateIso) : false;
+        const isRemedied = clinicDateIso ? isClinicConfirmed : Boolean(actRem);
+
         absences.push({
           dateIso,
           mondayIso,
           dayOfWeek: dow,
           remark: rec.remark ?? null,
-          isRemedied: Boolean(actRem),
-          remedyType: actRem ? "ACTIVITY" : "NONE",
-          remediedOnDateIso: actRem
+          isRemedied,
+          remedyType: isClinicConfirmed ? "MAKEUP_WED_THU" : actRem && !clinicDateIso ? "ACTIVITY" : "NONE",
+          remediedOnDateIso: isClinicConfirmed
+            ? clinicDateIso
+            : actRem && !clinicDateIso
             ? actRem.createdAt
               ? formatDateISO(actRem.createdAt)
               : dateIso
             : undefined,
-          remedyTitle: actRem?.activityTitle,
+          remedyTitle: isRemedied ? actRem?.activityTitle : undefined,
           isInCurrentWeek: mondayIso === currentMondayIso,
           isGraceMakeUpWindow: false,
           isOverdueCrossWeek: false,
         });
-      }
-    } else if (kind === "MAKEUP_HOLIDAY") {
-      if (
-        rec.status === AttendanceStatus.PRESENT ||
-        rec.status === AttendanceStatus.LATE
-      ) {
-        makeupDates.push(dateIso);
       }
     }
   }
 
   // 2. จับคู่วันที่มาแก้แถวในวันหยุด (พ., พฤ.) เข้ากับวันขาดที่เก่าที่สุดที่ยังไม่ได้แก้ (FIFO: 1 วันหยุด = ล้าง 1 วันขาด โดยวันที่มาแก้ต้องหลังวันที่ขาด)
   const makeupUsageMap = new Map<string, MakeUpSessionUsage>();
+
+  // 2.1 บันทึกการจับคู่ที่ระบุเจาะจงล่วงหน้าจากคลินิกแก้แถว (พ./พฤ.)
+  for (const abs of absences) {
+    if (abs.isRemedied && abs.remedyType === "MAKEUP_WED_THU" && abs.remediedOnDateIso) {
+      makeupUsageMap.set(abs.remediedOnDateIso, {
+        makeupDateIso: abs.remediedOnDateIso,
+        targetAbsenceDateIso: abs.dateIso,
+      });
+    }
+  }
+
+  // 2.2 จับคู่ FIFO สำหรับวันที่มาแก้แถวที่ยังไม่ได้จับคู่แบบเจาะจง
   for (const mDateIso of makeupDates) {
+    if (makeupUsageMap.has(mDateIso)) continue;
     const targetAbsence = absences.find(
       (abs) => !abs.isRemedied && abs.dateIso < mDateIso
     );

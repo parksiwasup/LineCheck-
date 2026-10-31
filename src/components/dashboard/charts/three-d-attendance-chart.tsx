@@ -29,36 +29,59 @@ import type { WeeklyTrendItem } from "@/actions/dashboard";
 
 interface ThreeDAttendanceChartProps {
   data: WeeklyTrendItem[];
+  totalStudents?: number;
 }
 
-export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
+export function ThreeDAttendanceChart({ data, totalStudents: totalStudentsProp }: ThreeDAttendanceChartProps) {
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
   const [selectedDay, setSelectedDay] = React.useState<WeeklyTrendItem | null>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [replayKey, setReplayKey] = React.useState<number>(0);
   const [isAnimating, setIsAnimating] = React.useState<boolean>(false);
 
-  // SVG Dimension & Coordinate setup
+  // SVG Dimension & Coordinate setup: compact height to eliminate vertical empty dead space
   const svgWidth = 760;
-  const svgHeight = 330;
-  const groundY = 245;
-  const maxBarHeight = 175;
-  const totalStudents = 24;
+  const svgHeight = 265;
+  const groundY = 225;
+  const maxBarHeight = 165;
 
-  const leftPad = 48;
+  const effectiveTotal = Math.max(
+    totalStudentsProp || 0,
+    ...data.map((d) => (d.present || 0) + (d.absent || 0) + (d.late || 0) + (d.leave || 0)),
+    24
+  );
+
+  const leftPad = 58;
   const rightPad = 68; // Increased padding to avoid Y-axis label collision
   const usableWidth = svgWidth - leftPad - rightPad;
-  const n = data.length || 7;
-  const step = usableWidth / Math.max(n - 1, 1);
+  const n = data.length;
 
-  // 3D Isometric Offsets
-  const barWidth = 32;
+  // Horizontal position of each pillar:
+  // When n >= 5: distribute evenly across usable width
+  // When n < 5: keep a natural, comfortable step and CENTER the group
+  // This eliminates the giant empty whitespace on the right while keeping bars sequential!
+  const getXCenter = React.useCallback(
+    (i: number) => {
+      if (n >= 5) {
+        const slotWidth = usableWidth / n;
+        return leftPad + (i + 0.5) * slotWidth;
+      }
+      const naturalStep = n <= 1 ? 0 : n === 2 ? 140 : n === 3 ? 120 : 105;
+      const groupWidth = (n - 1) * naturalStep;
+      const groupStartX = leftPad + (usableWidth - groupWidth) / 2;
+      return groupStartX + i * naturalStep;
+    },
+    [n, leftPad, usableWidth]
+  );
+
+  // 3D Isometric Offsets & Dimensions
+  const barWidth = 36;
   const dx = 12; // 3D depth to the right
   const dy = -8; // 3D depth upwards
 
   // Calculate points for the 3D Trend Line
   const linePoints = data.map((item, i) => {
-    const xCenter = leftPad + i * step;
+    const xCenter = getXCenter(i);
     const rate = Math.min(Math.max(item.attendanceRate, 0), 100);
     const yCenter = groundY - (rate / 100) * maxBarHeight + dy / 2;
     return {
@@ -71,8 +94,10 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
 
   // SVG Smooth Bezier Path for Line
   const createSmoothLinePath = (pts: { x: number; y: number }[]) => {
-    if (pts.length === 0) return "";
-    if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
+    if (pts.length <= 1) return "";
+    if (pts.length === 2) {
+      return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+    }
     let d = `M ${pts[0].x} ${pts[0].y}`;
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[i === 0 ? 0 : i - 1];
@@ -109,18 +134,18 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
   return (
     <div className="relative w-full overflow-hidden select-none">
       {/* Control Bar: Replay & Interactive Guidance */}
-      <div className="flex items-center justify-between mb-1 px-1">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-          <Sparkles className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
-          <span>คลิกที่เสาหรือจุด 3D เพื่อเปิดดูรายชื่อคนขาดของวันนั้น</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2 px-1">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium min-w-0">
+          <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0 animate-pulse" />
+          <span className="truncate sm:whitespace-normal">คลิกที่เสาหรือจุด 3D เพื่อเปิดดูรายชื่อคนขาดของวันนั้น</span>
         </div>
         <button
           type="button"
           onClick={handleTriggerReplay}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap self-start sm:self-auto"
           title="เล่นแอนิเมชันเสา 3D ดันตัวขึ้นใหม่"
         >
-          <RotateCcw className={`h-3 w-3 ${isAnimating ? "animate-spin text-primary" : ""}`} />
+          <RotateCcw className={`h-3 w-3 shrink-0 ${isAnimating ? "animate-spin text-primary" : ""}`} />
           <span>เล่นแอนิเมชัน 3D</span>
         </button>
       </div>
@@ -129,7 +154,6 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
         key={replayKey}
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         className="w-full h-auto drop-shadow-sm transition-all"
-        style={{ minHeight: "300px" }}
       >
         <defs>
           {/* Filters for 3D Lighting & Shadows */}
@@ -143,22 +167,22 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
             <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#818cf8" floodOpacity="0.8" />
           </filter>
           <filter id="column-glow" x="-40%" y="-20%" width="180%" height="140%">
-            <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#34d399" floodOpacity="0.65" />
+            <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#22c55e" floodOpacity="0.65" />
           </filter>
 
-          {/* Gradients for 3D Faces: Present (Green) */}
+          {/* Gradients for 3D Faces: Present (Vibrant Modern Apple / Spring Green) */}
           <linearGradient id="present-front" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#34d399" />
-            <stop offset="35%" stopColor="#10b981" />
-            <stop offset="100%" stopColor="#059669" />
+            <stop offset="0%" stopColor="#4ade80" />
+            <stop offset="35%" stopColor="#22c55e" />
+            <stop offset="100%" stopColor="#16a34a" />
           </linearGradient>
           <linearGradient id="present-side" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#047857" />
-            <stop offset="100%" stopColor="#064e3b" />
+            <stop offset="0%" stopColor="#16a34a" />
+            <stop offset="100%" stopColor="#15803d" />
           </linearGradient>
           <linearGradient id="present-top" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#6ee7b7" />
-            <stop offset="100%" stopColor="#10b981" />
+            <stop offset="0%" stopColor="#86efac" />
+            <stop offset="100%" stopColor="#4ade80" />
           </linearGradient>
 
           {/* Gradients for 3D Faces: Absent (Rose) */}
@@ -186,12 +210,31 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
         </defs>
 
         {/* 3D Isometric Background Grid Lines & Floor */}
-        <g opacity="0.35">
-          {[0, 6, 12, 18, 24].map((val) => {
-            const y = groundY - (val / totalStudents) * maxBarHeight;
-            const pct = Math.round((val / totalStudents) * 100);
+        <g opacity="0.45">
+          {/* Axis Unit Labels */}
+          <text
+            x={leftPad - 14}
+            y={groundY - maxBarHeight - 10}
+            textAnchor="end"
+            className="fill-muted-foreground font-bold text-[9px]"
+          >
+            (คน)
+          </text>
+          <text
+            x={svgWidth - rightPad + 22}
+            y={groundY - maxBarHeight - 10}
+            textAnchor="start"
+            className="fill-indigo-600 dark:fill-indigo-400 font-bold text-[9px]"
+          >
+            (%)
+          </text>
+
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const val = Math.round(ratio * effectiveTotal);
+            const y = groundY - ratio * maxBarHeight;
+            const pct = Math.round(ratio * 100);
             return (
-              <g key={val}>
+              <g key={ratio}>
                 <line
                   x1={leftPad - 15}
                   y1={y}
@@ -201,16 +244,16 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
                   strokeDasharray="4 4"
                   strokeWidth="1"
                 />
-                {/* Left Y-axis count */}
+                {/* Left Y-axis count: clearly labeled as คน (Students) */}
                 <text
-                  x={leftPad - 20}
+                  x={leftPad - 14}
                   y={y + 4}
                   textAnchor="end"
                   className="fill-muted-foreground text-[10px] font-semibold"
                 >
-                  {val}
+                  {val} คน
                 </text>
-                {/* Right Y-axis percentage with ample padding */}
+                {/* Right Y-axis percentage */}
                 <text
                   x={svgWidth - rightPad + 22}
                   y={y + 4}
@@ -226,12 +269,12 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
 
         {/* 3D Ground Shadow & Hover Light Aura Under Each Pillar */}
         {data.map((_, i) => {
-          const cx = leftPad + i * step;
+          const cx = getXCenter(i);
           const isHovered = hoveredIndex === i;
           return (
             <g key={`shadow-group-${i}`}>
               <ellipse
-                cx={cx + barWidth / 2 + dx / 2}
+                cx={cx + dx / 2}
                 cy={groundY + 3}
                 rx={isHovered ? barWidth * 0.9 : barWidth * 0.75}
                 ry={isHovered ? 8 : 6}
@@ -241,7 +284,7 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
               />
               {isHovered && (
                 <ellipse
-                  cx={cx + barWidth / 2 + dx / 2}
+                  cx={cx + dx / 2}
                   cy={groundY + 2}
                   rx={barWidth * 0.95}
                   ry={7}
@@ -257,7 +300,7 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
 
         {/* 3D Stacked Columns */}
         {data.map((item, i) => {
-          const x = leftPad + i * step - barWidth / 2;
+          const x = getXCenter(i) - barWidth / 2;
           const isHovered = hoveredIndex === i;
 
           // Segment calculations from bottom to top
@@ -276,7 +319,7 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
 
           // 1. มา (Present)
           if (item.present > 0) {
-            const h = (item.present / totalStudents) * maxBarHeight;
+            const h = (item.present / effectiveTotal) * maxBarHeight;
             const yTop = currentY - h;
             segments.push({
               id: "present",
@@ -293,7 +336,7 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
 
           // 2. ขาด (Absent)
           if (item.absent > 0) {
-            const h = (item.absent / totalStudents) * maxBarHeight;
+            const h = (item.absent / effectiveTotal) * maxBarHeight;
             const yTop = currentY - h;
             segments.push({
               id: "absent",
@@ -492,12 +535,12 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
             style={{
               left: `${Math.min(
                 Math.max(
-                  ((leftPad + hoveredIndex * step) / svgWidth) * 100,
-                  18
+                  (getXCenter(hoveredIndex) / svgWidth) * 100,
+                  20
                 ),
                 80
               )}%`,
-              top: "28px",
+              top: "16px",
             }}
             className="pointer-events-none absolute -translate-x-1/2 z-20 rounded-2xl border border-white/20 bg-card/95 px-4 py-3 shadow-xl backdrop-blur-md min-w-[210px]"
           >
@@ -561,9 +604,9 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
       </AnimatePresence>
 
       {/* 3D Legend Bar */}
-      <div className="mt-3 flex flex-wrap items-center justify-center gap-4 sm:gap-8 border-t border-border/50 pt-3 text-xs">
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-3 sm:gap-6 border-t border-border/50 pt-2 text-xs">
         <div className="flex items-center gap-2">
-          <div className="h-3 w-5 rounded-sm bg-gradient-to-r from-emerald-400 to-emerald-600 shadow-2xs border border-emerald-300" />
+          <div className="h-3 w-5 rounded-sm bg-gradient-to-r from-green-400 via-green-500 to-green-600 shadow-2xs border border-green-300" />
           <span className="font-medium">มาเข้าแถว (คน)</span>
         </div>
         <div className="flex items-center gap-2">
@@ -596,7 +639,7 @@ export function ThreeDAttendanceChart({ data }: ThreeDAttendanceChartProps) {
                       สรุปการเข้าแถววันที่ {selectedDay.dateLabel}
                     </DialogTitle>
                     <DialogDescription className="text-xs">
-                      รหัสวัน {selectedDay.dateIso} • นักเรียนทั้งหมด {totalStudents} คน
+                      รหัสวัน {selectedDay.dateIso} • นักเรียนทั้งหมด {effectiveTotal} คน
                     </DialogDescription>
                   </div>
                 </div>

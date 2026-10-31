@@ -698,3 +698,430 @@ export async function reviewRemedialTaskAction(
     };
   }
 }
+
+export interface ClinicMakeupDateOption {
+  dateIso: string;
+  dayOfWeek: number; // 3=Wed, 4=Thu
+  dayName: string; // "วันพุธ" or "วันพฤหัสบดี"
+  dayShort: string; // "พ." or "พฤ."
+  dateThaiFormatted: string; // "7 ต.ค. 2569"
+  isSameWeek: boolean;
+  isNextWeek: boolean;
+  categoryLabel: string;
+  isAttended: boolean;
+  attendanceRemark: string | null;
+  remediesDateIso: string | null;
+  isRemedyingTarget: boolean;
+}
+
+export interface StudentClinicMakeupInfo {
+  student: {
+    id: string;
+    studentId: string;
+    fullName: string;
+    classroom: string;
+  };
+  targetAbsence: {
+    dateIso: string;
+    dateThai: string;
+    dayName: string;
+    isRemedied: boolean;
+    remedyTitle: string | null;
+    remediedOnDateIso: string | null;
+    isOverdueCrossWeek: boolean;
+  } | null;
+  allAbsences: Array<{
+    dateIso: string;
+    dateThai: string;
+    dayName: string;
+    isRemedied: boolean;
+    remedyTitle: string | null;
+    remediedOnDateIso: string | null;
+    isOverdueCrossWeek: boolean;
+  }>;
+  clinicDates: ClinicMakeupDateOption[];
+  activeClinicYear: number;
+  activeClinicMonth: number;
+}
+
+export async function getStudentClinicMakeupInfoAction(
+  studentIdOrCode: string,
+  targetDateIso?: string,
+  clinicYear?: number,
+  clinicMonth?: number
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: StudentClinicMakeupInfo;
+}> {
+  try {
+    const query = studentIdOrCode.trim();
+    const student = await prisma.student.findFirst({
+      where: {
+        OR: [{ id: query }, { studentId: query }],
+      },
+      include: {
+        attendanceRecords: { orderBy: { date: "asc" } },
+        remedialRecords: { orderBy: { createdAt: "desc" } },
+      },
+    });
+
+    if (!student) {
+      return { success: false, message: "ไม่พบข้อมูลนักเรียนที่ระบุ" };
+    }
+
+    const evalResult = evaluateStudentAttendanceRules(
+      student.attendanceRecords,
+      student.remedialRecords
+    );
+
+    const allAbsences = evalResult.absences.map((abs) => {
+      const d = parseIsoToUtc(abs.dateIso);
+      const dow = d.getUTCDay();
+      const thaiYear = d.getUTCFullYear() + 543;
+      return {
+        dateIso: abs.dateIso,
+        dateThai: `${d.getUTCDate()} ${THAI_SHORT_MONTHS[d.getUTCMonth()]} ${thaiYear}`,
+        dayName:
+          dow === 1
+            ? "วันจันทร์"
+            : dow === 2
+            ? "วันอังคาร"
+            : dow === 5
+            ? "วันศุกร์"
+            : `วัน ${THAI_SHORT_DOW[dow]}`,
+        isRemedied: abs.isRemedied,
+        remedyTitle: abs.remedyTitle ?? null,
+        remediedOnDateIso: abs.remediedOnDateIso ?? null,
+        isOverdueCrossWeek: abs.isOverdueCrossWeek,
+      };
+    });
+
+    const activeTarget = targetDateIso
+      ? allAbsences.find((a) => a.dateIso === targetDateIso) ??
+        allAbsences.find((a) => !a.isRemedied) ??
+        allAbsences[0] ??
+        null
+      : allAbsences.find((a) => !a.isRemedied) ?? allAbsences[0] ?? null;
+
+    const now = new Date();
+    const targetUtc = activeTarget ? parseIsoToUtc(activeTarget.dateIso) : now;
+
+    // คำนวณเดือนและปีสำหรับแสดงวันคลินิก (ค่าเริ่มต้นใช้ตามวันที่ขาด หรือเดือนปัจจุบัน)
+    const activeClinicYear =
+      clinicYear && clinicYear >= 2000
+        ? clinicYear
+        : activeTarget
+        ? targetUtc.getUTCFullYear()
+        : now.getFullYear();
+
+    const activeClinicMonth =
+      clinicMonth && clinicMonth >= 1 && clinicMonth <= 12
+        ? clinicMonth
+        : activeTarget
+        ? targetUtc.getUTCMonth() + 1
+        : now.getMonth() + 1;
+
+    const clinicDates: ClinicMakeupDateOption[] = [];
+
+    if (activeTarget) {
+      const targetMonday = getUtcMonday(targetUtc);
+      const targetMondayIso = formatDateISO(targetMonday);
+      const nextMondayIso = formatDateISO(addUtcDays(targetMonday, 7));
+
+      // สร้างรายชื่อวันพุธและพฤหัสฯ ทั้งหมดในเดือนและปีที่เลือก
+      const lastDayOfMonth = new Date(Date.UTC(activeClinicYear, activeClinicMonth, 0)).getUTCDate();
+      const candidateDates: Date[] = [];
+
+      for (let dayNum = 1; dayNum <= lastDayOfMonth; dayNum++) {
+        const candidate = new Date(Date.UTC(activeClinicYear, activeClinicMonth - 1, dayNum));
+        const dow = candidate.getUTCDay();
+        if (dow === 3 || dow === 4) {
+          // วันคลินิกต้องหลังวันที่ขาดเสมอ
+          if (formatDateISO(candidate) > activeTarget.dateIso) {
+            candidateDates.push(candidate);
+          }
+        }
+      }
+
+      const attendanceMap = new Map<string, { status: AttendanceStatus; remark: string | null }>();
+      for (const rec of student.attendanceRecords) {
+        attendanceMap.set(formatDateISO(rec.date), {
+          status: rec.status,
+          remark: rec.remark,
+        });
+      }
+
+      for (const cDate of candidateDates) {
+        const cDateIso = formatDateISO(cDate);
+        const dow = cDate.getUTCDay();
+        const cMondayIso = formatDateISO(getUtcMonday(cDate));
+        const isSameWeek = cMondayIso === targetMondayIso;
+        const isNextWeek = cMondayIso === nextMondayIso;
+        const thaiYear = cDate.getUTCFullYear() + 543;
+
+        const dayName = dow === 3 ? "วันพุธ" : "วันพฤหัสบดี";
+        const dayShort = dow === 3 ? "พ." : "พฤ.";
+
+        let categoryLabel = "รอบคลินิกประจำเดือน";
+        if (isSameWeek) {
+          categoryLabel = "⭐ รอบคลินิกนัดแก้ตรงสัปดาห์ (แนะนำ)";
+        } else if (isNextWeek) {
+          categoryLabel = "📅 รอบคลินิกนัดแก้สัปดาห์ถัดไป";
+        }
+
+        const rec = attendanceMap.get(cDateIso);
+        const isAttended =
+          rec?.status === AttendanceStatus.PRESENT ||
+          rec?.status === AttendanceStatus.LATE;
+
+        const usage = evalResult.makeupUsageMap.get(cDateIso);
+        const remediesDateIso = usage?.targetAbsenceDateIso ?? null;
+        const isRemedyingTarget = remediesDateIso === activeTarget.dateIso;
+
+        clinicDates.push({
+          dateIso: cDateIso,
+          dayOfWeek: dow,
+          dayName,
+          dayShort,
+          dateThaiFormatted: `${cDate.getUTCDate()} ${THAI_SHORT_MONTHS[cDate.getUTCMonth()]} ${thaiYear}`,
+          isSameWeek,
+          isNextWeek,
+          categoryLabel,
+          isAttended,
+          attendanceRemark: rec?.remark ?? null,
+          remediesDateIso,
+          isRemedyingTarget,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        student: {
+          id: student.id,
+          studentId: student.studentId,
+          fullName: `${student.title}${student.firstName} ${student.lastName}`,
+          classroom: student.classroom,
+        },
+        targetAbsence: activeTarget,
+        allAbsences,
+        clinicDates,
+        activeClinicYear,
+        activeClinicMonth,
+      },
+    };
+  } catch (error) {
+    console.error("Failed to get student clinic makeup info:", error);
+    return {
+      success: false,
+      message: "ไม่สามารถดึงข้อมูลคลินิกแก้แถวของนักเรียนได้",
+    };
+  }
+}
+
+export async function submitClinicMakeupAction(input: {
+  studentId: string;
+  targetAbsenceDate: string;
+  clinicMakeupDate: string;
+  note?: string;
+}): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  try {
+    const operator = await getActiveOperator();
+    const student = await prisma.student.findFirst({
+      where: {
+        OR: [{ id: input.studentId }, { studentId: input.studentId }],
+      },
+      select: {
+        id: true,
+        studentId: true,
+        classroom: true,
+        title: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!student) {
+      return { success: false, message: "ไม่พบข้อมูลนักเรียน" };
+    }
+
+    if (operator?.role === "TEACHER" && operator.classrooms) {
+      const allowed = operator.classrooms.split(",").map((c) => c.trim());
+      if (allowed.length > 0 && !allowed.includes(student.classroom)) {
+        return {
+          success: false,
+          message: `คุณไม่มีสิทธิ์จัดการข้อมูลนักเรียนห้อง ${student.classroom}`,
+        };
+      }
+    }
+
+    const clinicDateUtc = toUTCDateOnly(input.clinicMakeupDate);
+    const targetDateUtc = toUTCDateOnly(input.targetAbsenceDate);
+
+    const dow = clinicDateUtc.getUTCDay();
+    if (dow !== 3 && dow !== 4) {
+      return {
+        success: false,
+        message: "วันคลินิกแก้แถวต้องเป็นวันพุธ หรือวันพฤหัสบดีเท่านั้น",
+      };
+    }
+
+    // 1. บันทึกเช็คชื่อเข้าแถวในวันคลินิกแก้แถว (พ./พฤ.)
+    await prisma.attendanceRecord.upsert({
+      where: {
+        studentId_date: {
+          studentId: student.id,
+          date: clinicDateUtc,
+        },
+      },
+      update: {
+        status: AttendanceStatus.PRESENT,
+        remark: `มาเข้าคลินิกแก้แถว (ชดเชยวันขาด ${input.targetAbsenceDate})${
+          input.note ? ` - ${input.note.trim()}` : ""
+        }`,
+        recordedById: operator?.id ?? null,
+      },
+      create: {
+        studentId: student.id,
+        date: clinicDateUtc,
+        status: AttendanceStatus.PRESENT,
+        remark: `มาเข้าคลินิกแก้แถว (ชดเชยวันขาด ${input.targetAbsenceDate})${
+          input.note ? ` - ${input.note.trim()}` : ""
+        }`,
+        recordedById: operator?.id ?? null,
+      },
+    });
+
+    // 2. บันทึกประวัติการแก้แถว (RemedialRecord) ผูกกับวันที่ขาด
+    const dayLabel = dow === 3 ? "วันพุธ" : "วันพฤหัสบดี";
+    const desc = `มาเข้าคลินิกแก้แถว${dayLabel} (${input.clinicMakeupDate}) ชดเชยวันขาด (${input.targetAbsenceDate}) สำเร็จ${
+      input.note ? ` [หมายเหตุ: ${input.note.trim()}]` : ""
+    }`;
+
+    const existingRem = await prisma.remedialRecord.findFirst({
+      where: {
+        studentId: student.id,
+        targetDate: targetDateUtc,
+      },
+    });
+
+    if (existingRem) {
+      await prisma.remedialRecord.update({
+        where: { id: existingRem.id },
+        data: {
+          activityTitle: `มาเข้าคลินิกแก้แถว (${input.clinicMakeupDate})`,
+          description: desc,
+          status: RemedialStatus.APPROVED,
+          approvedById: operator?.id ?? null,
+        },
+      });
+    } else {
+      await prisma.remedialRecord.create({
+        data: {
+          studentId: student.id,
+          targetDate: targetDateUtc,
+          activityTitle: `มาเข้าคลินิกแก้แถว (${input.clinicMakeupDate})`,
+          description: desc,
+          hoursEarned: 1,
+          status: RemedialStatus.APPROVED,
+          approvedById: operator?.id ?? null,
+        },
+      });
+    }
+
+    revalidatePath("/attendance/check");
+    revalidatePath("/attendance/remedial");
+    revalidatePath("/attendance/calendar");
+    revalidatePath("/dashboard");
+    revalidatePath("/portal");
+    revalidatePath("/grades");
+
+    return {
+      success: true,
+      message: `บันทึกการมาเข้าคลินิกแก้แถวสำเร็จ ชดเชยวันที่ขาด (${input.targetAbsenceDate}) เรียบร้อยแล้ว`,
+    };
+  } catch (error) {
+    console.error("Failed to submit clinic makeup:", error);
+    return {
+      success: false,
+      message: "ไม่สามารถบันทึกการมาเข้าคลินิกแก้แถวได้",
+    };
+  }
+}
+
+export async function cancelClinicMakeupAction(input: {
+  studentId: string;
+  targetAbsenceDate: string;
+  clinicMakeupDate?: string;
+}): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  try {
+    const operator = await getActiveOperator();
+    const student = await prisma.student.findFirst({
+      where: {
+        OR: [{ id: input.studentId }, { studentId: input.studentId }],
+      },
+      select: { id: true, studentId: true, classroom: true },
+    });
+
+    if (!student) {
+      return { success: false, message: "ไม่พบข้อมูลนักเรียน" };
+    }
+
+    if (operator?.role === "TEACHER" && operator.classrooms) {
+      const allowed = operator.classrooms.split(",").map((c) => c.trim());
+      if (allowed.length > 0 && !allowed.includes(student.classroom)) {
+        return {
+          success: false,
+          message: `คุณไม่มีสิทธิ์จัดการข้อมูลนักเรียนห้อง ${student.classroom}`,
+        };
+      }
+    }
+
+    const targetDateUtc = toUTCDateOnly(input.targetAbsenceDate);
+
+    // 1. ลบประวัติแก้แถวสำหรับวันที่ขาดนี้
+    await prisma.remedialRecord.deleteMany({
+      where: {
+        studentId: student.id,
+        targetDate: targetDateUtc,
+      },
+    });
+
+    // 2. หากระบุวันคลินิก ให้ลบการเช็คชื่อวันนั้นออกเพื่อให้กลับเป็นวันหยุดปกติ (REST)
+    if (input.clinicMakeupDate) {
+      const clinicDateUtc = toUTCDateOnly(input.clinicMakeupDate);
+      await prisma.attendanceRecord.deleteMany({
+        where: {
+          studentId: student.id,
+          date: clinicDateUtc,
+        },
+      });
+    }
+
+    revalidatePath("/attendance/check");
+    revalidatePath("/attendance/remedial");
+    revalidatePath("/attendance/calendar");
+    revalidatePath("/dashboard");
+    revalidatePath("/portal");
+    revalidatePath("/grades");
+
+    return {
+      success: true,
+      message: `ยกเลิกการแก้แถวของวันที่ ${input.targetAbsenceDate} เรียบร้อยแล้ว`,
+    };
+  } catch (error) {
+    console.error("Failed to cancel clinic makeup:", error);
+    return {
+      success: false,
+      message: "ไม่สามารถยกเลิกการแก้แถวได้",
+    };
+  }
+}

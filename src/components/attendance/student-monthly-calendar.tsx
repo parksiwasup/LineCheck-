@@ -22,6 +22,7 @@ import {
   type StudentMonthlyCalendarData,
   type CalendarDayCell,
 } from "@/actions/calendar";
+import { RemedialClinicDialog } from "./remedial-clinic-dialog";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ interface StudentMonthlyCalendarProps {
   onSelectAbsentDate?: (studentId: string, dateIso: string) => void;
   showFullPageLink?: boolean;
   compact?: boolean;
+  readOnly?: boolean;
 }
 
 export function StudentMonthlyCalendar({
@@ -57,6 +59,7 @@ export function StudentMonthlyCalendar({
   onSelectAbsentDate,
   showFullPageLink = false,
   compact = false,
+  readOnly = false,
 }: StudentMonthlyCalendarProps) {
   const now = React.useMemo(() => new Date(), []);
   const [year, setYear] = React.useState<number>(
@@ -69,6 +72,20 @@ export function StudentMonthlyCalendar({
     React.useState<StudentMonthlyCalendarData | null>(initialData);
   const [isLoading, setIsLoading] = React.useState<boolean>(!initialData);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [internalTargetDate, setInternalTargetDate] = React.useState<string | null>(null);
+  const [isInternalModalOpen, setIsInternalModalOpen] = React.useState(false);
+
+  const handleOpenRemedial = React.useCallback(
+    (sid: string, dateIso: string) => {
+      if (onSelectAbsentDate) {
+        onSelectAbsentDate(sid, dateIso);
+      } else {
+        setInternalTargetDate(dateIso);
+        setIsInternalModalOpen(true);
+      }
+    },
+    [onSelectAbsentDate]
+  );
 
   const loadCalendar = React.useCallback(
     async (targetStudent: string, targetYear: number, targetMonth: number) => {
@@ -133,60 +150,64 @@ export function StudentMonthlyCalendar({
     setMonth(now.getMonth() + 1);
   };
 
-  const renderDayBadge = (day: CalendarDayCell) => {
+  const renderDayBadge = (day: CalendarDayCell, mobile: boolean = false) => {
     switch (day.visualStatus) {
       case "PRESENT":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
-            มาเข้าแถว
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
+            {mobile ? "มา" : "มาเข้าแถว"}
           </span>
         );
       case "LATE":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
-            มา (สาย)
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
+            {mobile ? "สาย" : "มา (สาย)"}
           </span>
         );
       case "REST":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
-            หยุดพัก
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
+            {mobile ? "พัก" : "หยุดพัก"}
           </span>
         );
       case "MAKEUP_ATTENDED":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
-            มาแก้แถว
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
+            {mobile ? "มาแก้" : "มาแก้แถว"}
           </span>
         );
       case "REMEDIED":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
             แก้แล้ว
           </span>
         );
       case "ABSENT_MAKEUP_WINDOW":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
-            ขาด (รอแก้)
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-amber-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
+            {mobile ? "รอแก้" : "ขาด (รอแก้)"}
           </span>
         );
       case "ABSENT":
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
-            ค้างแก้ข้ามรอบ!
+          <span className="inline-flex items-center justify-center gap-1 rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-2xs shrink-0 whitespace-nowrap">
+            {mobile ? "ขาด" : "ค้างแก้ข้ามรอบ!"}
           </span>
         );
       case "WEEKEND":
         return (
-          <span className="text-[10px] font-medium text-muted-foreground/60">
+          <span className="text-[10px] font-medium text-muted-foreground/60 shrink-0 whitespace-nowrap">
             วันหยุด
           </span>
         );
       default:
         return (
-          <span className="text-[10px] font-medium text-muted-foreground/60">
-            {day.isFuture ? "-" : day.dayOfWeek === 3 || day.dayOfWeek === 4 ? "หยุดพัก" : "ยังไม่เช็ค"}
+          <span className="text-[10px] font-medium text-muted-foreground/60 shrink-0 whitespace-nowrap">
+            {day.isFuture
+              ? "-"
+              : day.dayOfWeek === 3 || day.dayOfWeek === 4
+              ? mobile ? "พัก" : "หยุดพัก"
+              : mobile ? "-" : "ยังไม่เช็ค"}
           </span>
         );
     }
@@ -347,7 +368,7 @@ export function StudentMonthlyCalendar({
               <span className="text-xs font-normal">วัน</span>
             </p>
             <p className="text-[11px] text-muted-foreground">
-              คลินิก พ.-พฤ. / กิจกรรมจิตอาสา
+              เข้าคลินิกแก้แถว พุธ - พฤหัสบดี
             </p>
           </div>
 
@@ -545,7 +566,9 @@ export function StudentMonthlyCalendar({
                                 <div className="space-y-1">
                                   {renderDayBadge(day)}
 
-                                  {day.statusNote && (
+                                  {day.statusNote &&
+                                    day.statusNote !== "ค้างสะสมข้ามรอบ!" &&
+                                    day.statusNote !== "ค้างแก้ข้ามรอบ!" && (
                                     <p
                                       className={cn(
                                         "text-[10px] leading-tight truncate font-semibold",
@@ -573,11 +596,11 @@ export function StudentMonthlyCalendar({
                                     </p>
                                   )}
 
-                                  {isUnremediedAbsent && onSelectAbsentDate && (
+                                  {!readOnly && isUnremediedAbsent && (
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        onSelectAbsentDate(
+                                        handleOpenRemedial(
                                           calendarData.student.id,
                                           day.dateIso
                                         )
@@ -638,7 +661,7 @@ export function StudentMonthlyCalendar({
               {/* Mobile Weekly Cards View (จ - ศ) */}
               <div className="md:hidden divide-y divide-border/60">
                 {calendarData.weeks.map((week) => (
-                  <div key={week.mondayIso} className="p-3 space-y-2.5">
+                  <div key={week.mondayIso} className="p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-foreground">
                         สัปดาห์ที่ {week.weekIndex}
@@ -662,34 +685,35 @@ export function StudentMonthlyCalendar({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-5 gap-1.5">
+                    <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
                       {week.days.slice(0, 5).map((day, idx) => (
                         <div
                           key={day.dateIso}
                           onClick={() => {
                             if (
+                              !readOnly &&
                               (day.visualStatus === "ABSENT" ||
-                                day.visualStatus === "ABSENT_MAKEUP_WINDOW") &&
-                              onSelectAbsentDate
+                                day.visualStatus === "ABSENT_MAKEUP_WINDOW")
                             ) {
-                              onSelectAbsentDate(
+                              handleOpenRemedial(
                                 calendarData.student.id,
                                 day.dateIso
                               );
                             }
                           }}
                           className={cn(
-                            "rounded-xl border p-2 text-center flex flex-col items-center justify-between min-h-[78px]",
-                            !day.isCurrentMonth && "opacity-40",
+                            "rounded-xl border p-1.5 text-center flex flex-col items-center justify-between min-h-[66px] transition-all",
+                            !day.isCurrentMonth && "opacity-35 bg-muted/15 border-border/40",
+                            day.isToday && "ring-2 ring-primary ring-offset-1",
                             day.visualStatus === "PRESENT" ||
                               day.visualStatus === "LATE"
-                              ? "border-emerald-500/40 bg-emerald-500/10"
+                              ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15"
                               : day.visualStatus === "REST"
-                              ? "border-sky-500/40 bg-sky-500/10"
+                              ? "border-sky-500/30 bg-sky-500/[0.08]"
                               : day.visualStatus === "MAKEUP_ATTENDED"
-                              ? "border-fuchsia-500/50 bg-fuchsia-500/10"
+                              ? "border-fuchsia-500/50 bg-fuchsia-500/15"
                               : day.visualStatus === "REMEDIED"
-                              ? "border-violet-500/40 bg-violet-500/10"
+                              ? "border-violet-500/40 bg-violet-500/15"
                               : day.visualStatus === "ABSENT_MAKEUP_WINDOW"
                               ? "border-amber-500/60 bg-amber-500/15"
                               : day.visualStatus === "ABSENT"
@@ -697,15 +721,25 @@ export function StudentMonthlyCalendar({
                               : "border-border/60 bg-muted/20"
                           )}
                         >
-                          <span className="text-[10px] font-semibold text-muted-foreground">
-                            {DAY_HEADERS[idx].short} {day.dayNumber}
-                          </span>
-                          <div className="my-1">{renderDayBadge(day)}</div>
-                          {day.statusNote && (
-                            <span className="text-[9px] leading-tight text-muted-foreground line-clamp-1">
-                              {day.statusNote}
+                          <div className="flex flex-col items-center leading-none gap-0.5">
+                            <span className="text-[9px] font-medium text-muted-foreground uppercase">
+                              {DAY_HEADERS[idx].short.replace(".", "")}
                             </span>
-                          )}
+                            <span
+                              className={cn(
+                                "text-xs font-bold leading-none",
+                                day.isToday
+                                  ? "inline-flex h-4.5 w-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px]"
+                                  : "text-foreground"
+                              )}
+                            >
+                              {day.dayNumber}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 flex items-center justify-center">
+                            {renderDayBadge(day, true)}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -716,6 +750,19 @@ export function StudentMonthlyCalendar({
           )}
         </CardContent>
       </Card>
+
+      {/* Internal Remedial Clinic Makeup Modal (Only for Staff/Teacher) */}
+      {!readOnly && (
+        <RemedialClinicDialog
+          open={isInternalModalOpen}
+          onOpenChange={setIsInternalModalOpen}
+          studentIdOrCode={calendarData?.student.studentId ?? studentIdOrCode}
+          initialTargetDateIso={internalTargetDate}
+          onSuccess={() => {
+            loadCalendar(studentIdOrCode, year, month);
+          }}
+        />
+      )}
     </div>
   );
 }

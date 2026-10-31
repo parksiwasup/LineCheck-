@@ -196,61 +196,166 @@ export function DashboardClient({ data }: DashboardClientProps) {
 
   return (
     <div className="space-y-6">
-      {/* Hero Banner / Quick Navigation */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between rounded-3xl border border-border/80 bg-card/60 p-5 sm:p-6 backdrop-blur-sm shadow-xs">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary border border-primary/20">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-              Real-time Overview
-            </span>
-            <span className="text-xs text-muted-foreground font-medium">
-              อัปเดตสถิติประจำวัน
-            </span>
+      {/* Hero Banner / Quick Navigation with Luxury Glassmorphism & Ambient Glow */}
+      <div className="relative overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-card/95 via-card/80 to-primary/[0.04] p-5 sm:p-7 backdrop-blur-xl shadow-lg shadow-primary/5 transition-all">
+        {/* Ambient Glow Orbs */}
+        <div className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full bg-primary/15 blur-3xl animate-pulse" />
+        <div className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
+
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          {/* Left Column: Badges, Title, Description, and Micro-Stats */}
+          <div className="space-y-3.5 max-w-3xl">
+            {/* Top Badges & Live Status */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary border border-primary/20 shadow-2xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                <span>Real-time Live</span>
+              </span>
+
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground border border-border/60">
+                <CalendarCheck className="h-3.5 w-3.5 text-primary" />
+                <span>
+                  {format(new Date(), "EEEEที่ d MMMM yyyy", { locale: th })}
+                </span>
+              </span>
+
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                <Sparkles className="h-3 w-3" />
+                <span>อัปเดตสถิติล่าสุด</span>
+              </span>
+            </div>
+
+            {/* Hero Title */}
+            <div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-foreground">
+                แดชบอร์ดภาพรวม{" "}
+                <span className="bg-gradient-to-r from-primary via-indigo-600 to-sky-500 dark:from-primary dark:via-sky-400 dark:to-indigo-300 bg-clip-text text-transparent">
+                  สถิติการเข้าแถว
+                </span>
+              </h1>
+              <p className="mt-1 text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                สรุปอัตราการเข้าแถวประจำวัน แนวโน้มรายสัปดาห์ และสัดส่วนนักเรียนที่ผ่านเกณฑ์เทียบกับผู้ที่ต้องเข้าคลินิกแก้แถว
+              </p>
+            </div>
+
+            {/* Quick Micro-Stat Capsules */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 w-full max-w-2xl">
+              <div className="flex items-center justify-between gap-1.5 rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-xs font-medium text-foreground shadow-2xs">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                  <span className="text-muted-foreground truncate">นักเรียนทั้งหมด:</span>
+                </div>
+                <span className="font-bold text-foreground shrink-0">
+                  {summary.totalStudents.toLocaleString()} คน
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-1.5 rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-xs font-medium text-foreground shadow-2xs">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  <span className="text-muted-foreground truncate">มาแถววันนี้:</span>
+                </div>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                  {summary.todayAttendanceRate}%
+                </span>
+              </div>
+
+              <div
+                className={cn(
+                  "flex items-center justify-between gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium shadow-2xs",
+                  summary.deficitStudentCount > 0
+                    ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                    : "border-border/70 bg-card/80 text-muted-foreground"
+                )}
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <AlertTriangle
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      summary.deficitStudentCount > 0 ? "text-rose-500" : "text-muted-foreground"
+                    )}
+                  />
+                  <span className="truncate">ต้องแก้แถว:</span>
+                </div>
+                <span className="font-bold shrink-0">
+                  {summary.deficitStudentCount.toLocaleString()} คน
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-1.5 rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-xs font-medium text-foreground shadow-2xs">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <School className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                  <span className="text-muted-foreground truncate">ห้องเรียน:</span>
+                </div>
+                <span className="font-bold text-foreground shrink-0">
+                  {classroomSummary.length} ห้อง
+                </span>
+              </div>
+            </div>
           </div>
 
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-foreground">
-            แดชบอร์ดภาพรวมสถิติการเข้าแถว
-          </h1>
+          {/* Right Column: High-Impact Action Buttons */}
+          <div className="flex flex-col items-stretch justify-end gap-2.5 shrink-0 pt-2 lg:pt-0 w-full sm:w-auto lg:w-72">
+            {/* Primary CTA with Shimmer Sweep */}
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
+              <Button
+                asChild
+                size="lg"
+                className="relative overflow-hidden group w-full h-11 rounded-2xl px-5 text-sm font-bold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all cursor-pointer"
+              >
+                <Link href="/attendance/check" className="flex items-center justify-center gap-2">
+                  {/* Shimmer light reflection sweep */}
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 ease-in-out pointer-events-none" />
+                  <ClipboardCheck className="h-4 w-4 shrink-0" />
+                  <span>ไปหน้าเช็คชื่อประจำวัน</span>
+                  <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-1" />
+                </Link>
+              </Button>
+            </motion.div>
 
-          <p className="text-xs sm:text-sm text-muted-foreground max-w-2xl">
-            สรุปอัตราการเข้าแถวประจำวัน แนวโน้มรายสัปดาห์ และสัดส่วนนักเรียนที่ผ่านเกณฑ์เทียบกับผู้ที่ต้องแก้แถว
-          </p>
-        </div>
+            <div className="flex items-center gap-2 w-full">
+              {/* Remedial Clinic Button */}
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="flex-1">
+                <Button
+                  asChild
+                  variant="outline"
+                  className={cn(
+                    "w-full h-10 rounded-xl text-xs font-bold gap-1.5 shadow-2xs transition-all",
+                    summary.deficitStudentCount > 0
+                      ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
+                      : "border-border/80 bg-card hover:bg-muted"
+                  )}
+                >
+                  <Link href="/attendance/remedial" className="flex items-center justify-center gap-1.5">
+                    <ShieldAlert
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        summary.deficitStudentCount > 0 ? "text-rose-500 animate-pulse" : "text-muted-foreground"
+                      )}
+                    />
+                    <span>จัดการแก้แถว ({summary.deficitStudentCount})</span>
+                  </Link>
+                </Button>
+              </motion.div>
 
-        {/* Action Buttons Group */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0 pt-1 lg:pt-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleExportDashboardExcel}
-            className="h-10 rounded-xl border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 text-xs font-semibold gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <Download className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>ส่งออกรายงาน Excel</span>
-          </Button>
-
-          <Button
-            asChild
-            variant="outline"
-            className="h-10 rounded-xl border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 text-xs font-semibold gap-1.5 shadow-2xs"
-          >
-            <Link href="/attendance/remedial">
-              <ShieldAlert className="h-4 w-4 shrink-0 text-rose-500" />
-              <span>จัดการแก้แถว ({summary.deficitStudentCount})</span>
-            </Link>
-          </Button>
-
-          <Button
-            asChild
-            className="h-10 rounded-xl px-4 text-xs sm:text-sm font-semibold shadow-md gap-2"
-          >
-            <Link href="/attendance/check">
-              <ClipboardCheck className="h-4 w-4 shrink-0" />
-              <span>ไปหน้าเช็คชื่อประจำวัน</span>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-            </Link>
-          </Button>
+              {/* Excel Export Button */}
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleExportDashboardExcel}
+                  className="h-10 rounded-xl border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold gap-1.5 shadow-2xs cursor-pointer transition-all px-3.5"
+                  title="ส่งออกรายงาน Excel"
+                >
+                  <Download className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden sm:inline">Excel</span>
+                </Button>
+              </motion.div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -407,44 +512,46 @@ export function DashboardClient({ data }: DashboardClientProps) {
 
       {/* Charts Section Header with 2D / 3D Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-3">
-        <div>
-          <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
-            <span>การวิเคราะห์ข้อมูลเชิงลึก (Analytics & Visualizations)</span>
-            <span className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold tracking-tight">
+              การวิเคราะห์ข้อมูลเชิงลึก (Analytics & Visualizations)
+            </h2>
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
               {chartMode === "3d" ? "🧊 3D Isometric View" : "📊 2D Classic View"}
             </span>
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          </div>
+          <p className="text-xs text-muted-foreground">
             กราฟแท่งแนวโน้ม 3D ทรงกระบอก พร้อมเส้นเรืองแสง และกราฟวงแหวนโดนัท 3D แสดงสัดส่วนผ่านเกณฑ์
           </p>
         </div>
 
         {/* 2D / 3D Mode Toggle Switch */}
-        <div className="inline-flex items-center rounded-xl border border-border bg-muted/60 p-1 self-start sm:self-auto shadow-2xs">
+        <div className="inline-flex items-center rounded-xl border border-border bg-muted/60 p-1 self-start sm:self-auto shadow-2xs shrink-0">
           <button
             type="button"
             onClick={() => handleToggleMode("3d")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer",
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
               chartMode === "3d"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Box className="h-3.5 w-3.5" />
+            <Box className="h-3.5 w-3.5 shrink-0" />
             <span>โหมด 3D มีมิติ</span>
           </button>
           <button
             type="button"
             onClick={() => handleToggleMode("2d")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer",
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
               chartMode === "2d"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <TrendingUp className="h-3.5 w-3.5" />
+            <TrendingUp className="h-3.5 w-3.5 shrink-0" />
             <span>โหมด 2D มาตรฐาน</span>
           </button>
         </div>
@@ -455,8 +562,8 @@ export function DashboardClient({ data }: DashboardClientProps) {
         {/* Weekly Attendance Trend Line/Bar Chart */}
         <Card className="lg:col-span-8 shadow-sm border-t-2 border-t-primary/30">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                   {chartMode === "3d" ? (
                     <Box className="h-5 w-5" />
@@ -464,24 +571,24 @@ export function DashboardClient({ data }: DashboardClientProps) {
                     <TrendingUp className="h-5 w-5" />
                   )}
                 </div>
-                <div>
-                  <CardTitle className="text-base">
+                <div className="min-w-0">
+                  <CardTitle className="text-base truncate sm:text-clip">
                     แนวโน้มการเข้าแถวรายสัปดาห์ (Weekly Attendance Trend)
                   </CardTitle>
                   <CardDescription className="hidden sm:block">
                     {chartMode === "3d"
-                      ? "มุมมอง 3D เสาทรงกระบอกซ้อนชั้น มา/ขาด พร้อมเส้นอัตราเข้าแถว (%)"
-                      : "เปรียบเทียบจำนวนนักเรียนที่มาเข้าแถว ขาดแถว และอัตราการเข้าแถว (%)"}
+                      ? `มุมมอง 3D จำนวนนักเรียนที่มา/ขาดในแต่ละวัน (จากทั้งหมด ${summary.totalStudents} คน) พร้อมเส้นอัตราเข้าแถว (%)`
+                      : `เปรียบเทียบจำนวนนักเรียนที่มาเข้าแถว ขาดแถว (จากทั้งหมด ${summary.totalStudents} คน) และอัตราการเข้าแถว (%)`}
                   </CardDescription>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 {chartMode === "3d" && (
-                  <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20">
+                  <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-[10px] bg-primary/10 text-primary border-primary/20">
                     3D Isometric
                   </Badge>
                 )}
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="shrink-0 whitespace-nowrap text-xs">
                   ย้อนหลัง {weeklyTrend.length} วันทำการ
                 </Badge>
               </div>
@@ -490,7 +597,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
           <CardContent>
             {chartMode === "3d" ? (
               <div className="pt-2">
-                <ThreeDAttendanceChart data={weeklyTrend} />
+                <ThreeDAttendanceChart data={weeklyTrend} totalStudents={summary.totalStudents} />
               </div>
             ) : (
               <div className="h-[320px] w-full pt-2">
@@ -568,11 +675,11 @@ export function DashboardClient({ data }: DashboardClientProps) {
         </Card>
 
         {/* Donut Chart: Compliant vs Deficit Ratios */}
-        <Card className="lg:col-span-4 shadow-sm border-t-2 border-t-emerald-500/30">
+        <Card className="lg:col-span-4 shadow-sm border-t-2 border-t-green-500/30">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="h-9 w-9 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400 flex items-center justify-center shrink-0">
                   {chartMode === "3d" ? (
                     <Box className="h-5 w-5" />
                   ) : (
@@ -580,7 +687,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
                   )}
                 </div>
                 <div>
-                  <CardTitle className="text-base">
+                  <CardTitle className="text-base whitespace-nowrap">
                     สัดส่วนผ่านเกณฑ์
                   </CardTitle>
                   <CardDescription className="text-xs">
@@ -589,7 +696,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
                 </div>
               </div>
               {chartMode === "3d" && (
-                <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-[10px] bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20 self-start sm:self-auto">
                   3D Extruded
                 </Badge>
               )}
@@ -666,21 +773,21 @@ export function DashboardClient({ data }: DashboardClientProps) {
         {/* Classroom Summary */}
         <Card className="lg:col-span-5">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                   <School className="h-5 w-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <CardTitle className="text-base">
                     สรุปสถิติแยกตามห้องเรียน
                   </CardTitle>
-                  <CardDescription>
+                  <CardDescription className="text-xs">
                     ค่าเฉลี่ยอัตราการเข้าแถวและนักเรียนที่ต้องแก้แถว
                   </CardDescription>
                 </div>
               </div>
-              <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+              <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground self-start sm:self-auto shrink-0 whitespace-nowrap">
                 คลิกดูรายละเอียดได้
               </Badge>
             </div>
@@ -741,27 +848,29 @@ export function DashboardClient({ data }: DashboardClientProps) {
         {/* Recent Remedials Section */}
         <Card className="lg:col-span-7 shadow-sm">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="h-9 w-9 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
                   <Sparkles className="h-5 w-5" />
                 </div>
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <span>รายการแก้แถวล่าสุด</span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="text-base">
+                      รายการแก้แถวล่าสุด
+                    </CardTitle>
                     <span className="text-xs font-normal text-muted-foreground hidden sm:inline">
                       (Recent Remedials)
                     </span>
-                    <Badge variant="secondary" className="text-[10px] font-bold bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/25">
+                    <Badge variant="secondary" className="text-[10px] font-bold bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/25 shrink-0 whitespace-nowrap">
                       {recentRemedials.length} รายการ
                     </Badge>
-                  </CardTitle>
-                  <CardDescription>
+                  </div>
+                  <CardDescription className="text-xs mt-0.5">
                     ความเคลื่อนไหวการมาแก้แถวของนักเรียนในคลินิกแก้แถว
                   </CardDescription>
                 </div>
               </div>
-              <Button asChild variant="ghost" size="sm">
+              <Button asChild variant="ghost" size="sm" className="shrink-0 self-start sm:self-auto">
                 <Link href="/attendance/remedial">
                   <span>ดูทั้งหมด</span>
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -850,42 +959,42 @@ export function DashboardClient({ data }: DashboardClientProps) {
           if (!open) setSelectedClassroomDetail(null);
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-3xl">
+        <DialogContent className="max-w-3xl h-[92vh] sm:h-auto sm:max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl">
           {/* Modal Header */}
-          <div className="p-5 sm:p-6 pb-4 border-b border-border/70 bg-muted/20">
+          <div className="p-3.5 sm:p-5 pb-3 border-b border-border/70 bg-muted/20 shrink-0">
             <DialogHeader className="space-y-1">
-              <div className="flex items-center gap-3">
-                <div className="h-11 w-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0 shadow-2xs">
-                  <School className="h-6 w-6" />
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0 shadow-2xs">
+                  <School className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
-                <div>
-                  <DialogTitle className="text-lg sm:text-xl font-bold flex items-center gap-2">
-                    <span>รายละเอียดสถิติและการเข้าแถว ห้อง {selectedClassroomDetail?.classroom}</span>
-                    <Badge variant="secondary" className="text-xs font-mono">
+                <div className="min-w-0">
+                  <DialogTitle className="text-base sm:text-xl font-bold flex items-center gap-2 truncate">
+                    <span>ห้อง {selectedClassroomDetail?.classroom}</span>
+                    <Badge variant="secondary" className="text-xs font-mono shrink-0">
                       {selectedClassroomDetail?.totalStudents} คน
                     </Badge>
                   </DialogTitle>
-                  <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5 truncate hidden sm:block">
                     รายชื่อนักเรียนและอัตราการเข้าแถวรายบุคคลของห้อง {selectedClassroomDetail?.classroom}
                   </DialogDescription>
                 </div>
               </div>
             </DialogHeader>
 
-            {/* Stat Counters Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4">
-              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
-                <p className="text-[11px] text-muted-foreground font-medium">นักเรียนทั้งหมด</p>
-                <p className="text-lg font-bold mt-0.5 text-foreground">
+            {/* Stat Counters Grid - 4 Columns compact on both mobile and desktop */}
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5 mt-2.5 sm:mt-3.5">
+              <div className="rounded-xl border border-border/80 bg-card p-1.5 sm:p-2.5 text-center shadow-2xs">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground font-medium truncate">นักเรียนทั้งหมด</p>
+                <p className="text-xs sm:text-base font-bold mt-0.5 text-foreground">
                   {selectedClassroomDetail?.totalStudents} คน
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
-                <p className="text-[11px] text-muted-foreground font-medium">เข้าแถวเฉลี่ย</p>
+              <div className="rounded-xl border border-border/80 bg-card p-1.5 sm:p-2.5 text-center shadow-2xs">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground font-medium truncate">เข้าแถวเฉลี่ย</p>
                 <p
                   className={cn(
-                    "text-lg font-bold mt-0.5",
+                    "text-xs sm:text-base font-bold mt-0.5",
                     (selectedClassroomDetail?.averageRate ?? 0) >= 80
                       ? "text-emerald-600 dark:text-emerald-400"
                       : "text-rose-600 dark:text-rose-400"
@@ -895,29 +1004,29 @@ export function DashboardClient({ data }: DashboardClientProps) {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
-                <p className="text-[11px] text-muted-foreground font-medium">ผ่านเกณฑ์ (≥ 80%)</p>
-                <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+              <div className="rounded-xl border border-border/80 bg-card p-1.5 sm:p-2.5 text-center shadow-2xs">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground font-medium truncate">ผ่านเกณฑ์</p>
+                <p className="text-xs sm:text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                   {selectedClassroomDetail?.compliantCount} คน
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-border/80 bg-card p-3 text-center shadow-2xs">
-                <p className="text-[11px] text-muted-foreground font-medium">ต้องแก้แถว (&lt; 80%)</p>
-                <p className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+              <div className="rounded-xl border border-border/80 bg-card p-1.5 sm:p-2.5 text-center shadow-2xs">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground font-medium truncate">ต้องแก้แถว</p>
+                <p className="text-xs sm:text-base font-bold text-rose-600 dark:text-rose-400 mt-0.5">
                   {selectedClassroomDetail?.deficitCount} คน
                 </p>
               </div>
             </div>
 
             {/* Search & Filter Bar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mt-4">
-              <div className="flex items-center gap-1 bg-background p-1 rounded-xl border border-border text-xs">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-2.5 sm:mt-3">
+              <div className="flex items-center gap-1 bg-background p-0.5 sm:p-1 rounded-xl border border-border text-xs shrink-0 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setClassroomStudentFilter("ALL")}
                   className={cn(
-                    "px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer",
+                    "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
                     classroomStudentFilter === "ALL"
                       ? "bg-primary text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
@@ -929,42 +1038,42 @@ export function DashboardClient({ data }: DashboardClientProps) {
                   type="button"
                   onClick={() => setClassroomStudentFilter("DEFICIT")}
                   className={cn(
-                    "px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer",
+                    "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
                     classroomStudentFilter === "DEFICIT"
                       ? "bg-rose-600 text-white shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  ต้องแก้แถว ({selectedClassroomDetail?.deficitCount})
+                  ต้องแก้ ({selectedClassroomDetail?.deficitCount})
                 </button>
                 <button
                   type="button"
                   onClick={() => setClassroomStudentFilter("COMPLIANT")}
                   className={cn(
-                    "px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer",
+                    "px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
                     classroomStudentFilter === "COMPLIANT"
                       ? "bg-emerald-600 text-white shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  ผ่านเกณฑ์ ({selectedClassroomDetail?.compliantCount})
+                  ผ่าน ({selectedClassroomDetail?.compliantCount})
                 </button>
               </div>
 
               <div className="relative flex-1 sm:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                 <Input
                   placeholder="ค้นหาชื่อ หรือเลขประจำตัว..."
                   value={classroomStudentSearch}
                   onChange={(e) => setClassroomStudentSearch(e.target.value)}
-                  className="pl-8.5 h-9 text-xs rounded-xl"
+                  className="pl-8 h-8 sm:h-9 text-xs rounded-lg sm:rounded-xl"
                 />
               </div>
             </div>
           </div>
 
-          {/* Student List (Scrollable) */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2.5">
+          {/* Student List (Scrollable, takes all remaining space) */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 space-y-2">
             {filteredModalStudents.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground text-sm">
                 ไม่พบนักเรียนตามเงื่อนไขที่เลือก
@@ -974,28 +1083,28 @@ export function DashboardClient({ data }: DashboardClientProps) {
                 {filteredModalStudents.map((st) => (
                   <div
                     key={st.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-2xs"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 p-3 rounded-xl sm:rounded-2xl border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-2xs"
                   >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                        <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md shrink-0">
                           {st.studentId}
                         </span>
-                        <span className="font-bold text-sm text-foreground">
+                        <span className="font-bold text-xs sm:text-sm text-foreground truncate">
                           {st.fullName}
                         </span>
                         {st.isCompliant ? (
-                          <Badge variant="success" className="text-[10px] py-0">
+                          <Badge variant="success" className="text-[10px] py-0 shrink-0">
                             ผ่านเกณฑ์ (ผ.)
                           </Badge>
                         ) : (
-                          <Badge variant="destructive" className="text-[10px] py-0">
+                          <Badge variant="destructive" className="text-[10px] py-0 shrink-0">
                             ต้องแก้ {st.deficitDays} วัน
                           </Badge>
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <span className="h-2 w-2 rounded-full bg-emerald-500" />
                           มา {st.presentDays} วัน
@@ -1013,12 +1122,12 @@ export function DashboardClient({ data }: DashboardClientProps) {
                     </div>
 
                     {/* Progress Bar & Percent */}
-                    <div className="w-full sm:w-44 space-y-1">
+                    <div className="w-full sm:w-44 space-y-1 shrink-0 pt-1 sm:pt-0 border-t border-border/40 sm:border-t-0">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground text-[11px]">อัตราสุทธิ</span>
                         <span
                           className={cn(
-                            "font-bold",
+                            "font-bold text-xs",
                             st.effectiveRate >= 80
                               ? "text-emerald-600 dark:text-emerald-400"
                               : "text-rose-600 dark:text-rose-400"
@@ -1044,7 +1153,7 @@ export function DashboardClient({ data }: DashboardClientProps) {
           </div>
 
           {/* Modal Footer Quick Actions */}
-          <div className="p-4 border-t border-border/70 bg-muted/20 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="p-3 sm:p-4 border-t border-border/70 bg-muted/20 flex flex-wrap items-center justify-between gap-2 shrink-0">
             <span className="text-xs text-muted-foreground">
               ทางลัดจัดการห้อง {selectedClassroomDetail?.classroom}:
             </span>

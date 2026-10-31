@@ -302,7 +302,7 @@ export async function getDashboardAnalyticsAction(): Promise<DashboardAnalyticsD
     {
       name: "ผ่านเกณฑ์ปกติ (≥ 80%)",
       value: compliantStandardCount,
-      color: "#10b981",
+      color: "#22c55e",
     },
     ...(remediedCompliantCount > 0
       ? [
