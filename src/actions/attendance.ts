@@ -10,7 +10,7 @@ import {
   getSchoolDayKind,
   getUtcMonday,
 } from "@/lib/attendance-rules";
-import { AttendanceStatus, StudentStatus } from "@prisma/client";
+import { AttendanceStatus, RemedialStatus, StudentStatus } from "@prisma/client";
 
 const saveAttendanceSchema = z.object({
   dateIso: z.string().min(1, "กรุณาระบุวันที่"),
@@ -45,6 +45,11 @@ export interface DailyStudentAttendanceItem {
   nextTargetAbsenceIso?: string | null; // วันที่ขาดเก่าที่สุดที่จะถูกล้างหนี้หากมาแก้ในวันพุธ/พฤหัสฯ นี้
   nextTargetIsCrossWeek?: boolean; // เป็นหนี้ค้างมาจากสัปดาห์ก่อนหรือไม่
   hasOverdueDebt?: boolean; // พ้นเส้นตายวันอาทิตย์ / รอบนัดแล้วหรือยัง
+  // ข้อมูลสถานะการแก้แถวของวันเป้าหมายนี้
+  isTargetDateRemedied?: boolean; // วันเป้าหมายนี้เคยขาดและได้รับการแก้แถวชดเชยแล้ว
+  remediedOnDateIso?: string | null; // วันที่มาเข้าแก้แถวชดเชย (เช่น วันที่ 2026-10-07)
+  remedyActivityTitle?: string | null; // รายละเอียดกิจกรรมแก้แถว (เช่น มาเข้าคลินิกแก้แถว...)
+  compensatedAbsenceDateIso?: string | null; // กรณีวันนี้เป็นวันคลินิกและเด็กคนนี้มาแก้ชดเชยวันไหน
 }
 
 export async function getClassroomsAction(): Promise<string[]> {
@@ -139,6 +144,46 @@ export async function getDailyAttendanceAction(
     );
     const oldestPendingAbsence = eligibleAbsences[0] ?? null;
 
+    // ประเมินภาพรวมทั้งหมดของนักเรียน เพื่อดูผลการแก้แถวของ targetDate นี้ หรือการมาแก้คลินิกในวันนี้
+    const fullEval = evaluateStudentAttendanceRules(
+      student.attendanceRecords,
+      student.remedialRecords,
+      targetDate
+    );
+
+    // ตรวจสอบว่า targetDate นี้เป็นวันขาดที่ได้รับการแก้แถวแล้วหรือไม่
+    const targetAbsence = fullEval.absenceByDateMap.get(targetIso);
+    const directRemedial = student.remedialRecords.find(
+      (r) =>
+        formatDateISO(r.targetDate) === targetIso &&
+        r.status !== RemedialStatus.REJECTED
+    );
+    const isTargetDateRemedied = Boolean(
+      targetAbsence?.isRemedied || directRemedial
+    );
+    const remediedOnDateIso =
+      targetAbsence?.remediedOnDateIso ??
+      (directRemedial?.createdAt
+        ? formatDateISO(directRemedial.createdAt)
+        : null);
+    const remedyActivityTitle =
+      targetAbsence?.remedyTitle ?? directRemedial?.activityTitle ?? null;
+
+    // กรณีวันนี้เป็นวันคลินิกแก้แถว (พุธ/พฤหัสฯ): ตรวจสอบว่าเด็กคนนี้มาแก้ชดเชยให้วันขาดไหน
+    const compensatedAbsence = fullEval.absences.find(
+      (a) => a.isRemedied && a.remediedOnDateIso === targetIso
+    );
+    const directCompensatedRemedial = student.remedialRecords.find(
+      (r) =>
+        r.activityTitle.includes(`(${targetIso})`) &&
+        r.status !== RemedialStatus.REJECTED
+    );
+    const compensatedAbsenceDateIso =
+      compensatedAbsence?.dateIso ??
+      (directCompensatedRemedial
+        ? formatDateISO(directCompensatedRemedial.targetDate)
+        : null);
+
     // นับสถิติเฉพาะสัปดาห์ของ targetDate (จ., อ., ศ. อื่นๆ ที่ไม่ใช่วันนี้)
     const wkSummary = evalBeforeToday.weekSummaries.get(targetMondayIso);
     const weekOtherPresent = wkSummary?.attendedCount ?? 0;
@@ -184,6 +229,10 @@ export async function getDailyAttendanceAction(
         ? oldestPendingAbsence.mondayIso !== targetMondayIso
         : false,
       hasOverdueDebt: eligibleAbsences.some((a) => a.isOverdueCrossWeek),
+      isTargetDateRemedied,
+      remediedOnDateIso,
+      remedyActivityTitle,
+      compensatedAbsenceDateIso,
     };
   });
 

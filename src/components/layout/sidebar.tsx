@@ -14,6 +14,7 @@ import {
   Sparkles,
   School,
   ChevronRight,
+  ChevronLeft,
   Sun,
   Moon,
   Monitor,
@@ -43,6 +44,7 @@ interface SidebarProps {
     };
   } | null;
   onCloseMobile?: () => void;
+  onToggleCollapse?: () => void;
 }
 
 const navItems = [
@@ -137,7 +139,7 @@ const navItems = [
 
 
 
-export function Sidebar({ session, onCloseMobile }: SidebarProps) {
+export function Sidebar({ session, onCloseMobile, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -154,15 +156,15 @@ export function Sidebar({ session, onCloseMobile }: SidebarProps) {
   return (
     <aside className="h-full w-full flex flex-col bg-card border-r border-border/80 shadow-xs">
       {/* 1. Brand Logo Header - Comfortable 72px height aligned with top Navbar */}
-      <div className="h-[72px] px-4 sm:px-5 flex items-center border-b border-border/80 shrink-0">
+      <div className="h-[72px] px-3.5 sm:px-4 flex items-center justify-between border-b border-border/80 shrink-0">
         <Link
           href="/dashboard"
           onClick={onCloseMobile}
-          className="group flex items-center gap-3 w-full select-none"
+          className="group flex items-center gap-2.5 min-w-0 flex-1 select-none"
         >
           {/* 3D Multi-Layer School Icon */}
           <div className="relative shrink-0">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary via-indigo-600 to-emerald-500 p-[1.5px] shadow-md shadow-primary/25 transition-all duration-300 group-hover:scale-105 group-hover:shadow-primary/40">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary via-indigo-600 to-emerald-500 p-[1.5px] shadow-md shadow-primary/25 transition-all duration-300 group-hover:scale-105 group-hover:shadow-primary/40">
               <div className="h-full w-full rounded-[14px] bg-gradient-to-br from-primary via-indigo-700 to-blue-800 flex items-center justify-center text-white">
                 <School className="h-5 w-5 transition-transform duration-300 group-hover:scale-110 drop-shadow-xs" />
               </div>
@@ -184,15 +186,27 @@ export function Sidebar({ session, onCloseMobile }: SidebarProps) {
                 <span>EDU</span>
               </span>
             </div>
-            <p className="text-[11px] text-muted-foreground truncate font-medium flex items-center gap-1.5 mt-1">
+            <p className="text-[10.5px] text-muted-foreground truncate font-medium flex items-center gap-1.5 mt-0.5">
               <span className="relative flex h-1.5 w-1.5 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
               </span>
-              <span className="truncate">ระบบเช็คชื่อเข้าแถวสถานศึกษา</span>
+              <span className="truncate">ระบบเช็คชื่อเข้าแถว</span>
             </p>
           </div>
         </Link>
+
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="hidden lg:flex h-8 w-8 items-center justify-center rounded-xl border border-border/70 hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer shrink-0 ml-1 shadow-2xs"
+            title="พับเก็บเมนูด้านข้าง (Collapse Sidebar)"
+            aria-label="Collapse Sidebar"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* 2. Main Navigation Links */}

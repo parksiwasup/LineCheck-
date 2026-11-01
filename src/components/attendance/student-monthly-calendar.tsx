@@ -33,16 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-const DAY_HEADERS = [
-  { short: "จ.", full: "จันทร์", sub: "วันบังคับ", holiday: false, weekend: false },
-  { short: "อ.", full: "อังคาร", sub: "วันบังคับ", holiday: false, weekend: false },
-  { short: "พ.", full: "พุธ", sub: "หยุด / คลินิกแก้แถว", holiday: true, weekend: false },
-  { short: "พฤ.", full: "พฤหัสบดี", sub: "หยุด / คลินิกแก้แถว", holiday: true, weekend: false },
-  { short: "ศ.", full: "ศุกร์", sub: "วันบังคับ", holiday: false, weekend: false },
-  { short: "ส.", full: "เสาร์", sub: "วันหยุด", holiday: false, weekend: true },
-  { short: "อา.", full: "อาทิตย์", sub: "เส้นตาย 23:59", holiday: false, weekend: true },
-];
+import { getStudentCalendarDayHeaders } from "@/types/academic-calendar";
 
 interface StudentMonthlyCalendarProps {
   studentIdOrCode: string;
@@ -86,6 +77,11 @@ export function StudentMonthlyCalendar({
     },
     [onSelectAbsentDate]
   );
+
+  const dayHeaders = React.useMemo(() => {
+    const targetDate = new Date(year, month - 1, 1);
+    return getStudentCalendarDayHeaders(targetDate);
+  }, [year, month]);
 
   const loadCalendar = React.useCallback(
     async (targetStudent: string, targetYear: number, targetMonth: number) => {
@@ -483,7 +479,7 @@ export function StudentMonthlyCalendar({
                 <table className="w-full border-collapse table-fixed">
                   <thead>
                     <tr className="border-b border-border/70 bg-muted/50 text-xs font-bold text-muted-foreground">
-                      {DAY_HEADERS.map((dh) => (
+                      {dayHeaders.map((dh) => (
                         <th
                           key={dh.short}
                           className={cn(
@@ -723,7 +719,7 @@ export function StudentMonthlyCalendar({
                         >
                           <div className="flex flex-col items-center leading-none gap-0.5">
                             <span className="text-[9px] font-medium text-muted-foreground uppercase">
-                              {DAY_HEADERS[idx].short.replace(".", "")}
+                              {dayHeaders[idx]?.short.replace(".", "")}
                             </span>
                             <span
                               className={cn(

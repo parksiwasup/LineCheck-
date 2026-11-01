@@ -38,6 +38,7 @@ import type { Role } from "@prisma/client";
 
 interface AppShellProps {
   children: React.ReactNode;
+  activeTermName?: string;
   session?: {
     user?: {
       id: string;
@@ -74,9 +75,10 @@ const BACKGROUND_STYLES: {
   { id: "solid", label: "สีพื้นเรียบ", desc: "พื้นหลังสีล้วนสบายตา" },
 ];
 
-export function AppShell({ children, session }: AppShellProps) {
+export function AppShell({ children, session, activeTermName }: AppShellProps) {
   const pathname = usePathname();
   const [mobileSidebarOpen, setMobileSidebarOpen] = React.useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = React.useState(true);
   const { colorTheme, setColorTheme, bgStyle, setBgStyle } = useAttendanceStore();
   const [mounted, setMounted] = React.useState(false);
 
@@ -84,9 +86,21 @@ export function AppShell({ children, session }: AppShellProps) {
     setMounted(true);
     const savedColor = localStorage.getItem("linecheck-color-theme") as ColorTheme | null;
     const savedBg = localStorage.getItem("linecheck-bg-style") as BackgroundStyle | null;
+    const savedSidebar = localStorage.getItem("linecheck-desktop-sidebar-open");
     if (savedColor) setColorTheme(savedColor);
     if (savedBg) setBgStyle(savedBg);
+    if (savedSidebar !== null) {
+      setDesktopSidebarOpen(savedSidebar === "true");
+    }
   }, [setColorTheme, setBgStyle]);
+
+  const toggleDesktopSidebar = React.useCallback(() => {
+    setDesktopSidebarOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem("linecheck-desktop-sidebar-open", String(next));
+      return next;
+    });
+  }, []);
 
   React.useEffect(() => {
     if (!mounted) return;
@@ -370,9 +384,17 @@ export function AppShell({ children, session }: AppShellProps) {
 
   return (
     <div className="min-h-dvh flex bg-background">
-      {/* 1. Desktop Left Sidebar (Fixed on Desktop) */}
-      <div className="hidden lg:flex fixed inset-y-0 left-0 w-64 xl:w-72 z-40">
-        <Sidebar session={session} />
+      {/* 1. Desktop Left Sidebar (Fixed on Desktop, Collapsible) */}
+      <div
+        className={cn(
+          "hidden lg:flex fixed inset-y-0 left-0 w-64 xl:w-72 z-40 transition-transform duration-300 ease-in-out",
+          !desktopSidebarOpen && "-translate-x-full pointer-events-none"
+        )}
+      >
+        <Sidebar
+          session={session}
+          onToggleCollapse={toggleDesktopSidebar}
+        />
       </div>
 
       {/* 2. Mobile Sidebar Slide-Over Drawer */}
@@ -390,7 +412,7 @@ export function AppShell({ children, session }: AppShellProps) {
             <button
               type="button"
               onClick={() => setMobileSidebarOpen(false)}
-              className="absolute top-4 right-[-44px] h-9 w-9 rounded-full bg-card border border-border flex items-center justify-center text-foreground shadow-md"
+              className="absolute top-4 right-[-44px] h-9 w-9 rounded-full bg-card border border-border flex items-center justify-center text-foreground shadow-md cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>
@@ -398,16 +420,29 @@ export function AppShell({ children, session }: AppShellProps) {
         </div>
       )}
 
-      {/* 3. Main Content Wrapper (Shifted right on Desktop) */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-64 xl:pl-72">
+      {/* 3. Main Content Wrapper (Shifted right on Desktop when open) */}
+      <div
+        className={cn(
+          "flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out",
+          desktopSidebarOpen ? "lg:pl-64 xl:pl-72" : "lg:pl-0"
+        )}
+      >
         {/* Top Utility Header - Comfortable 72px height aligned with Sidebar header */}
         <header className="sticky top-0 z-30 h-[72px] w-full border-b border-border/80 bg-card/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 xl:px-10 flex items-center justify-between gap-3">
-          {/* Left: Mobile Toggle & Page Title */}
+          {/* Left: Hamburger Toggle & Page Title */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
             <button
               type="button"
-              onClick={() => setMobileSidebarOpen(true)}
-              className="lg:hidden flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground shadow-2xs hover:bg-muted"
+              onClick={() => {
+                if (window.innerWidth < 1024) {
+                  setMobileSidebarOpen(true);
+                } else {
+                  toggleDesktopSidebar();
+                }
+              }}
+              className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground shadow-2xs hover:bg-muted transition-all cursor-pointer"
+              title={desktopSidebarOpen ? "พับเก็บเมนูด้านข้าง (Collapse Sidebar)" : "เปิดเมนูด้านข้าง (Expand Sidebar)"}
+              aria-label="Toggle Navigation Sidebar"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -488,7 +523,7 @@ export function AppShell({ children, session }: AppShellProps) {
 
             {/* User Profile Popover */}
             {session?.user ? (
-              <UserProfilePopover user={session.user} />
+              <UserProfilePopover user={session.user} activeTermName={activeTermName} />
             ) : (
               <Link
                 href="/login"

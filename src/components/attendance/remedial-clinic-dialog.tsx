@@ -11,6 +11,7 @@ import {
   Sparkles,
   Loader2,
   Check,
+  X,
   CalendarCheck,
   Info,
   Trash2,
@@ -107,15 +108,19 @@ export function RemedialClinicDialog({
             targetIso ?? res.data.targetAbsence?.dateIso ?? res.data.allAbsences[0]?.dateIso ?? "";
           setSelectedTargetDate(activeDate);
 
-          // หา clinic date เริ่มต้นที่จับคู่อยู่แล้ว หรือวันแรกของรอบสัปดาห์
+          // หา clinic date เริ่มต้นที่จับคู่อยู่แล้วสำหรับวันขาดนี้ หรือวันแรกที่ยังว่าง (ไม่ถูกใช้วันอื่น)
           const matchingClinic = res.data.clinicDates.find(
             (c) => c.remediesDateIso === activeDate || c.isRemedyingTarget
           );
           if (matchingClinic) {
             setSelectedClinicDate(matchingClinic.dateIso);
           } else {
+            // เลือกเฉพาะวันคลินิกที่ยังว่าง ไม่ถูกนำไปชดเชยวันขาดอื่น
+            const availableClinics = res.data.clinicDates.filter(
+              (c) => !c.remediesDateIso || c.remediesDateIso === activeDate
+            );
             const firstAvailable =
-              res.data.clinicDates.find((c) => c.isSameWeek) ?? res.data.clinicDates[0];
+              availableClinics.find((c) => c.isSameWeek) ?? availableClinics[0];
             setSelectedClinicDate(firstAvailable?.dateIso ?? "");
           }
         } else {
@@ -194,6 +199,14 @@ export function RemedialClinicDialog({
   const handleSubmitClinicMakeup = async () => {
     if (!data?.student.id || !selectedTargetDate || !selectedClinicDate) {
       toast.error("กรุณาเลือกวันที่คลินิกแก้ (พ./พฤ.) ให้เรียบร้อย");
+      return;
+    }
+
+    const clinicObj = data.clinicDates.find((c) => c.dateIso === selectedClinicDate);
+    if (clinicObj?.remediesDateIso && clinicObj.remediesDateIso !== selectedTargetDate) {
+      toast.error(
+        `วันคลินิกนี้ถูกใช้ชดเชยวันขาดวันที่ ${clinicObj.remediesDateIso} ไปแล้ว ไม่สามารถใช้ซ้ำได้เพื่อป้องกันข้อมูลทับซ้อน`
+      );
       return;
     }
 
@@ -489,23 +502,40 @@ export function RemedialClinicDialog({
                     {data.clinicDates.map((clinic) => {
                       const isSelected = selectedClinicDate === clinic.dateIso;
                       const isWed = clinic.dayOfWeek === 3;
+                      const isUsedByOther = Boolean(
+                        clinic.remediesDateIso && clinic.remediesDateIso !== selectedTargetDate
+                      );
+
                       return (
                         <div
                           key={clinic.dateIso}
-                          onClick={() => setSelectedClinicDate(clinic.dateIso)}
+                          onClick={() => {
+                            if (isUsedByOther) {
+                              toast.warning(
+                                `วันคลินิกนี้ถูกใช้ชดเชยวันขาดวันที่ ${clinic.remediesDateIso} ไปแล้ว ไม่สามารถติ๊กซ้ำได้ (ป้องกันข้อมูลทับซ้อน)`,
+                                { id: "clinic-used" }
+                              );
+                              return;
+                            }
+                            setSelectedClinicDate(clinic.dateIso);
+                          }}
                           className={cn(
-                            "flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
-                            isSelected
-                              ? "border-primary bg-primary/[0.08] ring-2 ring-primary/40 shadow-xs"
-                              : "border-border/70 bg-card hover:bg-muted/40",
-                            clinic.isRemedyingTarget && "border-emerald-500 bg-emerald-500/[0.08]"
+                            "flex items-center justify-between p-3 rounded-xl border transition-all",
+                            isUsedByOther
+                              ? "border-rose-500/25 bg-rose-500/[0.03] opacity-70 cursor-not-allowed select-none"
+                              : isSelected
+                              ? "border-primary bg-primary/[0.08] ring-2 ring-primary/40 shadow-xs cursor-pointer"
+                              : "border-border/70 bg-card hover:bg-muted/40 cursor-pointer",
+                            clinic.isRemedyingTarget && !isUsedByOther && "border-emerald-500 bg-emerald-500/[0.08]"
                           )}
                         >
                           <div className="flex items-center gap-3">
                             <div
                               className={cn(
                                 "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold shadow-2xs",
-                                isWed
+                                isUsedByOther
+                                  ? "bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30"
+                                  : isWed
                                   ? "bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30"
                                   : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
                               )}
@@ -513,23 +543,44 @@ export function RemedialClinicDialog({
                               {clinic.dayShort}
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs sm:text-sm font-bold text-foreground">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={cn(
+                                    "text-xs sm:text-sm font-bold",
+                                    isUsedByOther
+                                      ? "text-muted-foreground line-through decoration-rose-500/40"
+                                      : "text-foreground"
+                                  )}
+                                >
                                   {clinic.dayName}ที่ {clinic.dateThaiFormatted}
                                 </span>
-                                {clinic.isSameWeek && (
-                                  <span className="inline-flex rounded-md bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary border border-primary/20">
-                                    แนะนำ (รอบตรงสัปดาห์)
+                                {isUsedByOther ? (
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-0.5 text-[9.5px] font-bold text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                                    <AlertTriangle className="h-3 w-3 text-rose-500" />
+                                    <span>ใช้ชดเชยวันอื่นแล้ว (ห้ามติ๊กซ้ำ)</span>
                                   </span>
-                                )}
-                                {clinic.isNextWeek && (
-                                  <span className="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
-                                    สัปดาห์ถัดไป
-                                  </span>
+                                ) : (
+                                  <>
+                                    {clinic.isSameWeek && (
+                                      <span className="inline-flex rounded-md bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary border border-primary/20">
+                                        แนะนำ (รอบตรงสัปดาห์)
+                                      </span>
+                                    )}
+                                    {clinic.isNextWeek && (
+                                      <span className="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                                        สัปดาห์ถัดไป
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
-                                {clinic.isAttended ? (
+                              <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                                {isUsedByOther ? (
+                                  <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    <span>ถูกนำไปชดเชยวันขาด {clinic.remediesDateIso} แล้ว</span>
+                                  </span>
+                                ) : clinic.isAttended ? (
                                   <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
                                     <CheckCircle2 className="h-3 w-3" />
                                     <span>เคยบันทึกมาเข้าคลินิกแล้ว</span>
@@ -539,9 +590,9 @@ export function RemedialClinicDialog({
                                     วันคลินิกแก้แถว (เปิดรับรายงานตัว)
                                   </span>
                                 )}
-                                {clinic.remediesDateIso && (
+                                {clinic.remediesDateIso && !isUsedByOther && (
                                   <span className="text-violet-600 dark:text-violet-400 font-medium">
-                                    • ชดเชยวันขาด {clinic.remediesDateIso}
+                                    • ชดเชยวันขาดนี้ ({clinic.remediesDateIso})
                                   </span>
                                 )}
                               </div>
@@ -549,16 +600,25 @@ export function RemedialClinicDialog({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <div
-                              className={cn(
-                                "flex h-6 w-6 items-center justify-center rounded-full border transition-all",
-                                isSelected
-                                  ? "border-primary bg-primary text-primary-foreground shadow-2xs"
-                                  : "border-muted-foreground/30 bg-card"
-                              )}
-                            >
-                              {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
-                            </div>
+                            {isUsedByOther ? (
+                              <div
+                                className="flex h-6 w-6 items-center justify-center rounded-full border border-rose-400/40 bg-rose-500/10 text-rose-500"
+                                title="ชดเชยวันขาดอื่นไปแล้ว ไม่สามารถเลือกได้"
+                              >
+                                <X className="h-3.5 w-3.5 stroke-[3]" />
+                              </div>
+                            ) : (
+                              <div
+                                className={cn(
+                                  "flex h-6 w-6 items-center justify-center rounded-full border transition-all",
+                                  isSelected
+                                    ? "border-primary bg-primary text-primary-foreground shadow-2xs"
+                                    : "border-muted-foreground/30 bg-card"
+                                )}
+                              >
+                                {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -637,7 +697,19 @@ export function RemedialClinicDialog({
             <Button
               type="button"
               size="sm"
-              disabled={isSubmitting || !selectedClinicDate || !selectedTargetDate}
+              disabled={
+                isSubmitting ||
+                !selectedClinicDate ||
+                !selectedTargetDate ||
+                Boolean(
+                  data?.clinicDates.find(
+                    (c) =>
+                      c.dateIso === selectedClinicDate &&
+                      c.remediesDateIso &&
+                      c.remediesDateIso !== selectedTargetDate
+                  )
+                )
+              }
               onClick={handleSubmitClinicMakeup}
               className="text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm cursor-pointer"
             >

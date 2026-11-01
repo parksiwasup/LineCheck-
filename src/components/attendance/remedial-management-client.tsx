@@ -41,6 +41,7 @@ import {
   Image as ImageIcon,
   Target,
   Copy,
+  ArrowRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PrintableNoticeModal } from "./printable-notice-modal";
@@ -74,14 +75,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Configure @tanstack/react-table v9 features
@@ -175,8 +168,9 @@ export function RemedialManagementClient({
   }, [currentUser?.classrooms]);
 
   const [isPending, startTransition] = React.useTransition();
+  const [activeTab, setActiveTab] = React.useState<"deficit-table" | "approval-logs">("deficit-table");
   const [statusFilter, setStatusFilter] = React.useState<
-    "ALL" | "SCHEDULED_MAKEUP" | "OVERDUE_DEBT" | "INCOMPLETE_45" | "COMPLETED_45"
+    "ALL" | "SCHEDULED_MAKEUP" | "OVERDUE_DEBT" | "INCOMPLETE_45" | "COMPLETED_45" | "REMEDIED"
   >("ALL");
   const [selectedStudent, setSelectedStudent] =
     React.useState<StudentDeficitReportItem | null>(
@@ -409,6 +403,8 @@ export function RemedialManagementClient({
         matchStatus = !s.isCompletedSemester;
       } else if (statusFilter === "COMPLETED_45") {
         matchStatus = s.isCompletedSemester;
+      } else if (statusFilter === "REMEDIED") {
+        matchStatus = s.approvedRemedialCount > 0;
       }
 
       return matchClass && matchQuery && matchStatus;
@@ -419,6 +415,15 @@ export function RemedialManagementClient({
     remedialSearchQuery,
     statusFilter,
   ]);
+
+  const studentDeficitMap = React.useMemo(() => {
+    const map = new Map<string, StudentDeficitReportItem>();
+    for (const s of initialReport.deficitStudents) {
+      map.set(s.studentId, s);
+      map.set(s.id, s);
+    }
+    return map;
+  }, [initialReport.deficitStudents]);
 
   const columns = React.useMemo(
     () =>
@@ -756,7 +761,13 @@ export function RemedialManagementClient({
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
-        <Card className="cursor-pointer transition-all hover:border-amber-400/60" onClick={() => setStatusFilter("SCHEDULED_MAKEUP")}>
+        <Card
+          className="cursor-pointer transition-all hover:border-amber-400/60"
+          onClick={() => {
+            setActiveTab("deficit-table");
+            setStatusFilter("SCHEDULED_MAKEUP");
+          }}
+        >
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
@@ -775,7 +786,13 @@ export function RemedialManagementClient({
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:border-rose-400/60" onClick={() => setStatusFilter("OVERDUE_DEBT")}>
+        <Card
+          className="cursor-pointer transition-all hover:border-rose-400/60"
+          onClick={() => {
+            setActiveTab("deficit-table");
+            setStatusFilter("OVERDUE_DEBT");
+          }}
+        >
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
@@ -794,7 +811,14 @@ export function RemedialManagementClient({
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:border-violet-400/50" onClick={() => setStatusFilter("ALL")}>
+        <Card
+          className="cursor-pointer transition-all hover:border-violet-400/60"
+          onClick={() => {
+            setActiveTab("approval-logs");
+            const el = document.getElementById("remedial-tabs-section");
+            if (el) el.scrollIntoView({ behavior: "smooth" });
+          }}
+        >
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
@@ -813,7 +837,13 @@ export function RemedialManagementClient({
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:border-emerald-400/50" onClick={() => setStatusFilter("INCOMPLETE_45")}>
+        <Card
+          className="cursor-pointer transition-all hover:border-emerald-400/50"
+          onClick={() => {
+            setActiveTab("deficit-table");
+            setStatusFilter("INCOMPLETE_45");
+          }}
+        >
           <CardContent className="p-3.5 sm:p-5 flex items-center justify-between">
             <div>
               <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
@@ -834,7 +864,11 @@ export function RemedialManagementClient({
       </div>
 
       {/* Main Content Tabs: Deficit Table (@tanstack/react-table v9) & Remedial Approval Logs */}
-      <Tabs defaultValue="deficit-table">
+      <Tabs
+        id="remedial-tabs-section"
+        value={activeTab}
+        onValueChange={(val) => setActiveTab(val as "deficit-table" | "approval-logs")}
+      >
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <TabsList>
             <TabsTrigger value="deficit-table">
@@ -896,6 +930,18 @@ export function RemedialManagementClient({
                 )}
               >
                 ⚠️ ยังไม่ครบ 45 ครั้ง
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("REMEDIED")}
+                className={cn(
+                  "rounded-lg px-2 py-1 text-xs font-semibold transition-colors cursor-pointer",
+                  statusFilter === "REMEDIED"
+                    ? "bg-violet-600 text-white"
+                    : "bg-violet-500/10 text-violet-700 dark:text-violet-300 hover:bg-violet-500/20"
+                )}
+              >
+                ✨ แก้แถวแล้ว ({initialReport.deficitStudents.filter((s) => s.approvedRemedialCount > 0).length})
               </button>
             </div>
 
@@ -1199,80 +1245,98 @@ export function RemedialManagementClient({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {initialReport.allRemedialLogs.map((log, idx) => (
-                    <motion.div
-                      key={log.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.15, delay: idx * 0.03 }}
-                      className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-card p-4 sm:flex-row sm:items-center sm:justify-between hover:border-primary/40 transition-colors"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-primary">
-                            {log.studentCode}
-                          </span>
-                          <span className="font-semibold text-sm">
-                            {log.studentName}
-                          </span>
-                          <Badge variant="secondary">{log.classroom}</Badge>
-                          <Badge variant="outline" className="gap-1">
-                            <CalendarDays className="h-3 w-3 text-rose-500" />
-                            ชดเชยวันขาด:{" "}
-                            {format(new Date(log.targetDateIso), "d MMM yyyy", {
-                              locale: th,
-                            })}
+                  {initialReport.allRemedialLogs.map((log, idx) => {
+                    const studentInfo =
+                      studentDeficitMap.get(log.studentCode) ||
+                      studentDeficitMap.get(log.studentId);
+
+                    return (
+                      <motion.div
+                        key={log.id}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.15, delay: idx * 0.03 }}
+                        className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-card p-4 sm:flex-row sm:items-center sm:justify-between hover:border-primary/40 transition-colors"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-primary">
+                              {log.studentCode}
+                            </span>
+                            <span className="font-semibold text-sm">
+                              {log.studentName}
+                            </span>
+                            <Badge variant="secondary">{log.classroom}</Badge>
+                            <Badge variant="outline" className="gap-1">
+                              <CalendarDays className="h-3 w-3 text-rose-500" />
+                              ชดเชยวันขาด:{" "}
+                              {format(new Date(log.targetDateIso), "d MMM yyyy", {
+                                locale: th,
+                              })}
+                            </Badge>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <BookOpenCheck className="h-4 w-4 text-primary shrink-0" />
+                            <span>{log.activityTitle}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({log.hoursEarned} ชั่วโมง)
+                            </span>
+                          </div>
+
+                          {log.description && (
+                            <p className="text-xs text-muted-foreground">
+                              {log.description}
+                            </p>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground pt-1">
+                            <span>
+                              ส่งเมื่อ:{" "}
+                              {format(
+                                new Date(log.createdAtIso),
+                                "d MMM yyyy HH:mm น.",
+                                { locale: th }
+                              )}
+                            </span>
+                            {log.approvedByName && (
+                              <span>ผู้ตรวจ: {log.approvedByName}</span>
+                            )}
+                            {log.proofUrl && (
+                              <a
+                                href={log.proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                ดูหลักฐานภาพถ่าย
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 self-end sm:self-center shrink-0">
+                          {studentInfo && studentInfo.overdueAbsenceCount > 0 ? (
+                            <Badge variant="destructive" className="gap-1 font-bold text-xs py-1 px-2.5 shadow-2xs">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              <span>ค้างแก้สะสมข้ามสัปดาห์ ({studentInfo.overdueAbsenceCount} ครั้ง)</span>
+                            </Badge>
+                          ) : studentInfo && studentInfo.graceMakeupAbsenceCount > 0 ? (
+                            <Badge variant="warning" className="gap-1 font-bold text-xs py-1 px-2.5 shadow-2xs">
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>รอนัดแก้ พุธ-พฤหัสฯ นี้ ({studentInfo.graceMakeupAbsenceCount} วัน)</span>
+                            </Badge>
+                          ) : null}
+
+                          <Badge variant="success" className="px-3 py-1 font-bold">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            แก้แถวแล้ว (ชดเชยสำเร็จ)
                           </Badge>
                         </div>
-
-                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                          <BookOpenCheck className="h-4 w-4 text-primary shrink-0" />
-                          <span>{log.activityTitle}</span>
-                          <span className="text-xs text-muted-foreground">
-                            ({log.hoursEarned} ชั่วโมง)
-                          </span>
-                        </div>
-
-                        {log.description && (
-                          <p className="text-xs text-muted-foreground">
-                            {log.description}
-                          </p>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground pt-1">
-                          <span>
-                            ส่งเมื่อ:{" "}
-                            {format(
-                              new Date(log.createdAtIso),
-                              "d MMM yyyy HH:mm น.",
-                              { locale: th }
-                            )}
-                          </span>
-                          {log.approvedByName && (
-                            <span>ผู้ตรวจ: {log.approvedByName}</span>
-                          )}
-                          {log.proofUrl && (
-                            <a
-                              href={log.proofUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              ดูหลักฐานภาพถ่าย
-                            </a>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                        <Badge variant="success" className="px-3 py-1">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          แก้แถวแล้ว (ชดเชยสำเร็จ)
-                        </Badge>
-                      </div>
-                    </motion.div>
-                  ))}
+                      </motion.div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

@@ -32,6 +32,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { logoutAction, updateUserProfileImageAction } from "@/actions/auth-actions";
+import { getAcademicCalendarAction } from "@/actions/academic-calendar";
 import { toast } from "sonner";
 import type { Role } from "@prisma/client";
 
@@ -44,9 +45,10 @@ interface UserProfilePopoverProps {
     role: Role;
     classrooms?: string | null;
   };
+  activeTermName?: string;
 }
 
-export function UserProfilePopover({ user }: UserProfilePopoverProps) {
+export function UserProfilePopover({ user, activeTermName }: UserProfilePopoverProps) {
   const router = useRouter();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -55,6 +57,26 @@ export function UserProfilePopover({ user }: UserProfilePopoverProps) {
   const [showSuccessToast, setShowSuccessToast] = React.useState(false);
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const [copiedEmail, setCopiedEmail] = React.useState(false);
+
+  const [currentActiveTerm, setCurrentActiveTerm] = React.useState<string>(
+    activeTermName || "ภาคเรียนปัจจุบัน"
+  );
+
+  React.useEffect(() => {
+    if (activeTermName) {
+      setCurrentActiveTerm(activeTermName);
+    } else {
+      getAcademicCalendarAction().then((res) => {
+        if (res.success && res.data) {
+          const act =
+            res.data.terms.find((t) => t.id === res.data.activeTermId) ??
+            res.data.terms.find((t) => t.isActive) ??
+            res.data.terms[0];
+          if (act) setCurrentActiveTerm(act.name);
+        }
+      });
+    }
+  }, [activeTermName]);
 
   // Sync avatarUrl if user prop changes
   React.useEffect(() => {
@@ -254,7 +276,7 @@ export function UserProfilePopover({ user }: UserProfilePopoverProps) {
             <div className="relative z-10 flex items-center shrink-0">
               <span className="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider backdrop-blur-md bg-white/15 border border-white/25 text-white shadow-xs flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>ภาคเรียนที่ 1 / 2569</span>
+                <span>{currentActiveTerm}</span>
               </span>
             </div>
           </div>

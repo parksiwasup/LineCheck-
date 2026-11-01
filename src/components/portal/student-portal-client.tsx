@@ -178,6 +178,10 @@ export function StudentPortalClient({
           <style
             dangerouslySetInnerHTML={{
               __html: `
+                @page {
+                  size: A4 portrait;
+                  margin: 10mm 12mm;
+                }
                 @media print {
                   body * {
                     visibility: hidden;
@@ -190,7 +194,8 @@ export function StudentPortalClient({
                     left: 0;
                     top: 0;
                     width: 100%;
-                    padding: 1.5cm;
+                    padding: 0 !important;
+                    margin: 0 !important;
                     background: white !important;
                     color: black !important;
                   }
@@ -203,9 +208,9 @@ export function StudentPortalClient({
           />
 
           {/* Official Printable Header (Visible in print) */}
-          <div className="hidden print:block text-center space-y-1 border-b-2 border-slate-900 pb-4 mb-6">
-            <h2 className="text-xl font-bold">สถานศึกษา / โรงเรียน LineCheck+ Academy</h2>
-            <h3 className="text-base font-semibold">ใบรายงานผลเวลาเข้าร่วมกิจกรรมเข้าแถวหน้าเสาธงรายบุคคล</h3>
+          <div className="hidden print:block text-center space-y-1 border-b-2 border-slate-900 pb-3 mb-4">
+            <h2 className="text-lg font-bold">สถานศึกษา / โรงเรียน LineCheck+ Academy</h2>
+            <h3 className="text-sm font-semibold">ใบรายงานผลเวลาเข้าร่วมกิจกรรมเข้าแถวหน้าเสาธงรายบุคคล</h3>
             <p className="text-xs text-slate-600">
               ข้อมูล ณ วันที่ {format(new Date(), "d MMMM yyyy", { locale: th })}
             </p>
@@ -279,7 +284,7 @@ export function StudentPortalClient({
               </div>
             </CardHeader>
 
-            <CardContent className="space-y-5 pt-2">
+            <CardContent className="space-y-5 pt-2 print:space-y-3 print:pt-0">
               {/* Progress Gauge & Stats Bar */}
               <div className="rounded-2xl border border-border bg-muted/30 p-4 sm:p-5 space-y-3">
                 <div className="flex items-center justify-between text-xs sm:text-sm">
@@ -485,17 +490,9 @@ export function StudentPortalClient({
                 )}
               </div>
 
-              {/* Advice box for student */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-1">
-                <p className="font-semibold text-foreground">💡 คำแนะนำสำหรับนักเรียนและผู้ปกครอง:</p>
-                <p className="text-muted-foreground leading-relaxed">
-                  หากนักเรียนยังมีผลการประเมินเป็น <strong>&ldquo;มผ.&rdquo;</strong> หรือมีวันที่ยังไม่ได้แก้แถว ขอให้นักเรียนมาเข้าแถวรอบคลินิกแก้แถวในวันพุธหรือวันพฤหัสบดี หรือติดต่อครูที่ปรึกษาประจำชั้นห้อง <strong>{student.classroom}</strong> เพื่อเข้ารับการแก้กิจกรรมและบันทึกเวลาเรียนให้ครบตามเกณฑ์ 80% ก่อนวันปิดภาคเรียน
-                </p>
-              </div>
-
               {/* Signatures for Print view only */}
-              <div className="hidden print:grid grid-cols-2 gap-8 pt-12 text-center text-xs">
-                <div className="space-y-10">
+              <div className="hidden print:grid grid-cols-2 gap-8 pt-8 text-center text-xs break-inside-avoid">
+                <div className="space-y-6">
                   <p>ลงชื่อ.................................................................</p>
                   <div>
                     <p className="font-semibold">(.................................................................)</p>
@@ -503,7 +500,7 @@ export function StudentPortalClient({
                   </div>
                 </div>
 
-                <div className="space-y-10">
+                <div className="space-y-6">
                   <p>ลงชื่อ.................................................................</p>
                   <div>
                     <p className="font-semibold">(.................................................................)</p>

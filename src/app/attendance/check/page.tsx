@@ -3,6 +3,7 @@ import {
   getClassroomsAction,
   getDailyAttendanceAction,
 } from "@/actions/attendance";
+import { getAcademicCalendarConfig } from "@/lib/academic-calendar";
 import { DailyCheckClient } from "@/components/attendance/daily-check-client";
 import { auth } from "@/lib/auth";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function AttendanceCheckPage() {
   const session = await auth();
   const allClassrooms = await getClassroomsAction();
+  const calendarConfig = getAcademicCalendarConfig();
 
   let allowedClassrooms = allClassrooms;
   if (session?.user?.role === "TEACHER" && session.user.classrooms?.trim()) {
@@ -36,6 +38,7 @@ export default async function AttendanceCheckPage() {
       initialData={initialData}
       assignedClassrooms={session?.user?.classrooms ?? null}
       userRole={session?.user?.role ?? "TEACHER"}
+      calendarConfig={calendarConfig}
     />
   );
 }

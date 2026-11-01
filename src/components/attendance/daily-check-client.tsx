@@ -41,11 +41,18 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  AcademicCalendarConfig,
+  getSchoolDayKindFromConfig,
+  getTermForDate,
+  getScheduleSummaryLabels,
+} from "@/types/academic-calendar";
 
 interface DailyCheckClientProps {
   initialClassrooms: string[];
   assignedClassrooms?: string | null;
   userRole?: string;
+  calendarConfig?: AcademicCalendarConfig | null;
   initialData: {
     dateIso: string;
     classroom: string;
@@ -114,6 +121,7 @@ export function DailyCheckClient({
   initialClassrooms,
   assignedClassrooms,
   userRole = "TEACHER",
+  calendarConfig,
   initialData,
 }: DailyCheckClientProps) {
   const {
@@ -126,6 +134,18 @@ export function DailyCheckClient({
     statusFilter,
     setStatusFilter,
   } = useAttendanceStore();
+
+  const currentTerm = React.useMemo(() => {
+    return getTermForDate(selectedDate, calendarConfig);
+  }, [selectedDate, calendarConfig]);
+
+  const scheduleLabels = React.useMemo(() => {
+    return getScheduleSummaryLabels(currentTerm);
+  }, [currentTerm]);
+
+  const selectedDayKind = getSchoolDayKindFromConfig(selectedDate, calendarConfig);
+  const isSelectedMakeupHoliday = selectedDayKind === "MAKEUP_HOLIDAY";
+  const isSelectedWeekend = selectedDayKind === "WEEKEND";
 
   const [students, setStudents] = React.useState<DailyStudentAttendanceItem[]>(
     initialData.students
@@ -406,8 +426,8 @@ export function DailyCheckClient({
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             {isMakeupHoliday
-              ? "วันพุธ-พฤหัสบดีเป็นวันหยุดของเด็กที่มาครบ • เปิดเช็คชื่อเฉพาะนักเรียนที่ติดขาด (จากต้นสัปดาห์ หรือโอนคิวมาจากสัปดาห์ก่อน)"
-              : "บังคับเข้าแถวเฉพาะ จันทร์, อังคาร, ศุกร์ (หยุด พุธ-พฤหัสบดี) • หากขาดต้องมาแก้ในวันหยุด พุธ-พฤหัสบดี"}
+              ? `วันหยุดรอบคลินิก (${scheduleLabels.makeupDaysShort}) เป็นวันหยุดของเด็กที่มาครบ • เปิดเช็คชื่อเฉพาะนักเรียนที่ติดขาด (จากต้นสัปดาห์ หรือโอนคิวมาจากสัปดาห์ก่อน)`
+              : `เข้าแถวตามเกณฑ์ ${scheduleLabels.requiredText} • หากขาดต้องมาแก้ในรอบคลินิกวันหยุด (${scheduleLabels.makeupDaysShort})`}
           </p>
         </div>
 
@@ -568,15 +588,15 @@ export function DailyCheckClient({
             {/* Date Selector */}
             <div className="md:col-span-4 space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                วันที่เช็คชื่อ (จ./อ./ศ. = วันมา • พ./พฤ. = วันหยุด/คลินิกแก้แถว)
+                วันที่เช็คชื่อ ({scheduleLabels.requiredText} • {scheduleLabels.makeupText})
               </label>
               <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
                 <PopoverTrigger
                   className={cn(
                     "flex h-11 w-full items-center justify-between gap-2.5 rounded-full border-2 px-4 py-2 text-sm font-semibold shadow-xs transition-all cursor-pointer",
-                    selectedDate.getDay() === 0 || selectedDate.getDay() === 6
+                    isSelectedWeekend
                       ? "border-rose-500/40 bg-rose-500/[0.05] hover:bg-rose-500/[0.10] text-rose-950 dark:text-rose-100"
-                      : selectedDate.getDay() === 3 || selectedDate.getDay() === 4
+                      : isSelectedMakeupHoliday
                       ? "border-violet-500/50 bg-violet-500/[0.06] hover:bg-violet-500/[0.12] text-violet-950 dark:text-violet-100"
                       : "border-emerald-500/50 bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] text-emerald-950 dark:text-emerald-100"
                   )}
@@ -585,9 +605,9 @@ export function DailyCheckClient({
                     <CalendarIcon
                       className={cn(
                         "h-4 w-4 shrink-0",
-                        selectedDate.getDay() === 0 || selectedDate.getDay() === 6
+                        isSelectedWeekend
                           ? "text-rose-600 dark:text-rose-400"
-                          : selectedDate.getDay() === 3 || selectedDate.getDay() === 4
+                          : isSelectedMakeupHoliday
                           ? "text-violet-600 dark:text-violet-400"
                           : "text-emerald-600 dark:text-emerald-400"
                       )}
@@ -598,11 +618,11 @@ export function DailyCheckClient({
                       })}
                     </span>
                   </span>
-                  {selectedDate.getDay() === 0 || selectedDate.getDay() === 6 ? (
+                  {isSelectedWeekend ? (
                     <span className="shrink-0 rounded-full bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 text-[11px] font-bold text-rose-700 dark:text-rose-300">
                       วันหยุด
                     </span>
-                  ) : selectedDate.getDay() === 3 || selectedDate.getDay() === 4 ? (
+                  ) : isSelectedMakeupHoliday ? (
                     <span className="shrink-0 rounded-full bg-violet-500/20 border border-violet-500/35 px-2.5 py-0.5 text-[11px] font-bold text-violet-700 dark:text-violet-300">
                       หยุด • คลินิกแก้แถว
                     </span>
@@ -616,6 +636,7 @@ export function DailyCheckClient({
                   <Calendar
                     mode="single"
                     selected={selectedDate}
+                    config={calendarConfig}
                     onSelect={(day) => {
                       if (day) {
                         setSelectedDate(day);
@@ -802,7 +823,7 @@ export function DailyCheckClient({
                     🎉 ไม่มีนักเรียนติดค้างคิวแก้แถวในห้องนี้!
                   </p>
                   <p className="text-xs">
-                    นักเรียนทุกคนมาครบตามเกณฑ์ จ.-อ.-ศ. ได้สิทธิ์หยุดพักวันพุธ-พฤหัสบดีครบทุกคน
+                    นักเรียนทุกคนมาครบตามเกณฑ์ ({scheduleLabels.requiredText}) ได้สิทธิ์หยุดพักรอบคลินิก ({scheduleLabels.makeupDaysShort}) ครบทุกคน
                   </p>
                   <Button
                     type="button"
@@ -846,7 +867,8 @@ export function DailyCheckClient({
                         3,
                         (student.weekOtherPresent ?? 0) +
                           (student.status === "PRESENT" ||
-                          student.status === "LATE"
+                          student.status === "LATE" ||
+                          student.isTargetDateRemedied
                             ? 1
                             : 0)
                       );
@@ -862,7 +884,7 @@ export function DailyCheckClient({
                             : 0)
                       )
                     : (student.weekOtherAbsent ?? 0) +
-                      (student.status === "ABSENT" ? 1 : 0);
+                      (student.status === "ABSENT" && !student.isTargetDateRemedied ? 1 : 0);
 
                   return (
                     <motion.div
@@ -876,9 +898,11 @@ export function DailyCheckClient({
                       className={cn(
                         "flex flex-col gap-2.5 p-3.5 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:px-6 sm:py-3.5 transition-colors",
                         !isMakeupHoliday && student.status === "ABSENT"
-                          ? "bg-rose-500/[0.05] hover:bg-rose-500/[0.09]"
+                          ? student.isTargetDateRemedied
+                            ? "bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] border-l-4 border-l-emerald-500 dark:border-l-emerald-400"
+                            : "bg-rose-500/[0.05] hover:bg-rose-500/[0.09]"
                           : isCameMakeup
-                          ? "bg-violet-500/[0.06] hover:bg-violet-500/[0.10]"
+                          ? "bg-violet-500/[0.06] hover:bg-violet-500/[0.10] border-l-4 border-l-violet-500 dark:border-l-violet-400"
                           : "hover:bg-muted/30"
                       )}
                     >
@@ -928,15 +952,12 @@ export function DailyCheckClient({
                             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                               {student.nextTargetAbsenceIso ? (
                                 isCameMakeup ? (
-                                  <span className="font-bold text-violet-600 dark:text-violet-400">
-                                    🟣 ชดเชยวันขาด{" "}
-                                    {formatShortThaiDate(
-                                      student.nextTargetAbsenceIso
-                                    )}{" "}
-                                    สำเร็จ!
+                                  <span className="font-bold text-violet-600 dark:text-violet-400 inline-flex items-center gap-1 bg-violet-500/10 dark:bg-violet-500/15 px-1.5 py-0.5 rounded border border-violet-500/20">
+                                    <Sparkles className="h-3 w-3 shrink-0" />
+                                    มาแก้แถวชดเชยวันขาด {formatShortThaiDate(student.compensatedAbsenceDateIso || student.nextTargetAbsenceIso)}
                                     {pendingDebt > 1
-                                      ? ` (ยังเหลืออีก ${pendingDebt - 1} วัน)`
-                                      : " (ครบหมดแล้ว)"}
+                                      ? ` (เหลืออีก ${pendingDebt - 1} วัน)`
+                                      : ""}
                                   </span>
                                 ) : student.hasOverdueDebt ? (
                                   <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
@@ -959,7 +980,7 @@ export function DailyCheckClient({
                                 )
                               ) : (
                                 <span className="text-sky-600 dark:text-sky-400 font-medium">
-                                  🏖️ ไม่ติดขาด (ได้สิทธิ์หยุดพัก พุธ-พฤหัสบดี)
+                                  🏖️ ไม่ติดขาด (ได้สิทธิ์หยุดพักรอบ {scheduleLabels.makeupDaysShort})
                                 </span>
                               )}
                             </div>
@@ -975,7 +996,26 @@ export function DailyCheckClient({
                               >
                                 สัปดาห์นี้: มา {totalWeekPresent}/3 วัน (จ. อ. ศ.)
                               </span>
-                              {totalWeekAbsent > 0 && (
+                              {student.status === "ABSENT" &&
+                              student.isTargetDateRemedied ? (
+                                <>
+                                  <span className="text-muted-foreground/40">
+                                    •
+                                  </span>
+                                  <span className="font-bold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1 bg-emerald-500/10 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/25">
+                                    <CheckCircle2 className="h-3 w-3 shrink-0" />
+                                    แก้แถวแล้ว
+                                    {student.remediedOnDateIso
+                                      ? ` (${formatShortThaiDate(student.remediedOnDateIso)})`
+                                      : ""}
+                                  </span>
+                                  {totalWeekAbsent > 0 && (
+                                    <span className="font-semibold text-rose-500 dark:text-rose-400 text-[10.5px]">
+                                      • ยังติดขาดวันอื่นอีก {totalWeekAbsent} วัน
+                                    </span>
+                                  )}
+                                </>
+                              ) : totalWeekAbsent > 0 ? (
                                 <>
                                   <span className="text-muted-foreground/40">
                                     •
@@ -984,26 +1024,28 @@ export function DailyCheckClient({
                                     ติดขาด {totalWeekAbsent} วัน (นัดแก้ พ.-พฤ.)
                                   </span>
                                 </>
-                              )}
-                              {totalWeekAbsent === 0 && pendingDebt > 0 && (
-                                <>
-                                  <span className="text-muted-foreground/40">
-                                    •
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "font-semibold",
-                                      student.hasOverdueDebt
-                                        ? "text-rose-600 dark:text-rose-400"
-                                        : "text-amber-600 dark:text-amber-400"
-                                    )}
-                                  >
-                                    {student.hasOverdueDebt
-                                      ? `ค้างเก่า ${pendingDebt} วัน`
-                                      : `รอแก้ พ.-พฤ. นี้ (${pendingDebt} วัน)`}
-                                  </span>
-                                </>
-                              )}
+                              ) : null}
+                              {totalWeekAbsent === 0 &&
+                                !student.isTargetDateRemedied &&
+                                pendingDebt > 0 && (
+                                  <>
+                                    <span className="text-muted-foreground/40">
+                                      •
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "font-semibold",
+                                        student.hasOverdueDebt
+                                          ? "text-rose-600 dark:text-rose-400"
+                                          : "text-amber-600 dark:text-amber-400"
+                                      )}
+                                    >
+                                      {student.hasOverdueDebt
+                                        ? `ค้างเก่า ${pendingDebt} วัน`
+                                        : `รอแก้ พ.-พฤ. นี้ (${pendingDebt} วัน)`}
+                                    </span>
+                                  </>
+                                )}
                             </div>
                           )}
                         </div>
@@ -1049,7 +1091,7 @@ export function DailyCheckClient({
                         <div
                           role="radiogroup"
                           aria-label={`สถานะของ ${student.fullName}`}
-                          className="grid grid-cols-2 gap-1.5 sm:gap-2 rounded-2xl bg-muted/80 p-1 w-full sm:max-w-[230px] border border-border/60"
+                          className="grid grid-cols-2 gap-1.5 sm:gap-2 rounded-2xl bg-muted/80 p-1 w-full sm:max-w-[240px] border border-border/60"
                         >
                           {activeStatusOptions.map((opt) => {
                             const isSelected =
@@ -1058,6 +1100,31 @@ export function DailyCheckClient({
                                 student.status === "LATE") ||
                               (opt.value === "EXEMPTION" &&
                                 student.status === "LEAVE");
+
+                            let labelContent: React.ReactNode = opt.label;
+                            let activeClass = opt.activeClass;
+
+                            if (
+                              !isMakeupHoliday &&
+                              opt.value === "ABSENT" &&
+                              student.isTargetDateRemedied
+                            ) {
+                              if (isSelected) {
+                                labelContent = (
+                                  <span className="inline-flex items-center justify-center gap-1 whitespace-nowrap">
+                                    <span>ขาด</span>
+                                    <span className="text-[11px] font-semibold opacity-90">
+                                      (แก้แล้ว)
+                                    </span>
+                                  </span>
+                                );
+                                activeClass =
+                                  "bg-emerald-600 text-white border-emerald-600 shadow-sm dark:bg-emerald-600 dark:border-emerald-600";
+                              } else {
+                                labelContent = "ขาด";
+                              }
+                            }
+
                             return (
                               <button
                                 key={opt.value}
@@ -1068,13 +1135,13 @@ export function DailyCheckClient({
                                   handleStatusChange(student.id, opt.value)
                                 }
                                 className={cn(
-                                  "rounded-xl py-2 sm:py-1.5 px-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer border touch-manipulation text-center",
+                                  "h-9 rounded-xl px-2 text-xs font-bold transition-all cursor-pointer border touch-manipulation flex items-center justify-center whitespace-nowrap overflow-hidden text-center",
                                   isSelected
-                                    ? opt.activeClass
+                                    ? activeClass
                                     : "border-transparent text-muted-foreground hover:text-foreground hover:bg-card/70"
                                 )}
                               >
-                                {opt.label}
+                                {labelContent}
                               </button>
                             );
                           })}

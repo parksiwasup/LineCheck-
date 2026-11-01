@@ -1,7 +1,11 @@
 import { AttendanceStatus, RemedialStatus } from "@prisma/client";
 import { formatDateISO } from "@/lib/utils";
+import {
+  getSchoolDayKindFromConfig,
+  type SchoolDayKind,
+} from "@/lib/academic-calendar";
 
-export type SchoolDayKind = "REQUIRED" | "MAKEUP_HOLIDAY" | "WEEKEND";
+export type { SchoolDayKind };
 
 export interface RawAttendanceInput {
   date: Date;
@@ -53,10 +57,7 @@ export interface EvaluatedWeekSummary {
 }
 
 export function getSchoolDayKind(d: Date): SchoolDayKind {
-  const dow = d.getUTCDay();
-  if (dow === 0 || dow === 6) return "WEEKEND";
-  if (dow === 3 || dow === 4) return "MAKEUP_HOLIDAY"; // พุธ, พฤหัสบดี = วันหยุดปกติ / วันคลินิกนัดแก้แถว
-  return "REQUIRED"; // จันทร์ (1), อังคาร (2), ศุกร์ (5) = วันบังคับเข้าแถว
+  return getSchoolDayKindFromConfig(d);
 }
 
 export function getUtcMonday(d: Date): Date {

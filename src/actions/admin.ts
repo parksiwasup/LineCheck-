@@ -5,6 +5,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { toUTCDateOnly, formatDateISO } from "@/lib/utils";
 import { Role, StudentStatus } from "@prisma/client";
+import {
+  getAcademicCalendarConfig,
+  type AcademicCalendarConfig,
+} from "@/lib/academic-calendar";
 
 const studentSchema = z.object({
   id: z.string().optional(),
@@ -38,6 +42,9 @@ export interface AdminStudentItem {
   classroom: string;
   status: StudentStatus;
   attendanceCount: number;
+  presentCount: number;
+  lateCount: number;
+  leaveCount: number;
   absentCount: number;
   remedialCount: number;
   createdAtIso: string;
@@ -54,6 +61,14 @@ export interface AdminUserItem {
   createdAtIso: string;
 }
 
+export interface AdminAttendanceDateStudent {
+  studentId: string;
+  studentCode: string;
+  fullName: string;
+  classroom: string;
+  status: string;
+}
+
 export interface AdminAttendanceDateSummary {
   dateIso: string;
   totalRecords: number;
@@ -61,6 +76,27 @@ export interface AdminAttendanceDateSummary {
   lateCount: number;
   absentCount: number;
   leaveCount: number;
+  classrooms?: string[];
+  teachers?: string[];
+  students?: AdminAttendanceDateStudent[];
+}
+
+export interface AdminRemedialItem {
+  id: string;
+  studentId: string;
+  studentCode: string;
+  studentName: string;
+  classroom: string;
+  targetDateIso: string;
+  remediedOnDateIso?: string | null;
+  activityTitle: string;
+  description?: string | null;
+  hoursEarned: number;
+  proofUrl: string | null;
+  status: "APPROVED" | "PENDING" | "REJECTED";
+  approvedByName: string | null;
+  createdAtIso: string;
+  type: "CLINIC_MAKEUP" | "SPECIAL_ACTIVITY";
 }
 
 export async function getAdminBackofficeDataAction(): Promise<{
@@ -68,6 +104,8 @@ export async function getAdminBackofficeDataAction(): Promise<{
   users: AdminUserItem[];
   classrooms: string[];
   attendanceDates: AdminAttendanceDateSummary[];
+  remedials: AdminRemedialItem[];
+  academicCalendar: AcademicCalendarConfig;
   systemStats: {
     totalStudents: number;
     activeStudents: number;
@@ -77,7 +115,7 @@ export async function getAdminBackofficeDataAction(): Promise<{
     totalRemedialRecords: number;
   };
 }> {
-  const [studentsRaw, usersRaw, allAttendances, totalRemedialRecords] =
+  const [studentsRaw, usersRaw, allAttendances, remedialRecordsRaw] =
     await Promise.all([
       prisma.student.findMany({
         include: {
@@ -105,26 +143,66 @@ export async function getAdminBackofficeDataAction(): Promise<{
         orderBy: [{ role: "desc" }, { createdAt: "asc" }],
       }),
       prisma.attendanceRecord.findMany({
-        select: { date: true, status: true },
+        select: {
+          date: true,
+          status: true,
+          student: {
+            select: {
+              id: true,
+              studentId: true,
+              title: true,
+              firstName: true,
+              lastName: true,
+              classroom: true,
+            },
+          },
+          recordedBy: {
+            select: { name: true },
+          },
+        },
         orderBy: { date: "desc" },
       }),
-      prisma.remedialRecord.count(),
+      prisma.remedialRecord.findMany({
+        include: {
+          student: true,
+          approvedBy: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
     ]);
 
-  const students: AdminStudentItem[] = studentsRaw.map((s) => ({
-    id: s.id,
-    studentId: s.studentId,
-    title: s.title,
-    firstName: s.firstName,
-    lastName: s.lastName,
-    fullName: `${s.title}${s.firstName} ${s.lastName}`,
-    classroom: s.classroom,
-    status: s.status,
-    attendanceCount: s._count.attendanceRecords,
-    absentCount: s.attendanceRecords.filter((r) => r.status === "ABSENT").length,
-    remedialCount: s._count.remedialRecords,
-    createdAtIso: s.createdAt.toISOString(),
-  }));
+  const students: AdminStudentItem[] = studentsRaw.map((s) => {
+    const presentCount = s.attendanceRecords.filter(
+      (r) => r.status === "PRESENT"
+    ).length;
+    const lateCount = s.attendanceRecords.filter(
+      (r) => r.status === "LATE"
+    ).length;
+    const absentCount = s.attendanceRecords.filter(
+      (r) => r.status === "ABSENT"
+    ).length;
+    const leaveCount = s.attendanceRecords.filter(
+      (r) => r.status === "LEAVE"
+    ).length;
+
+    return {
+      id: s.id,
+      studentId: s.studentId,
+      title: s.title,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      fullName: `${s.title}${s.firstName} ${s.lastName}`,
+      classroom: s.classroom,
+      status: s.status,
+      attendanceCount: s._count.attendanceRecords,
+      presentCount,
+      lateCount,
+      leaveCount,
+      absentCount,
+      remedialCount: s._count.remedialRecords,
+      createdAtIso: s.createdAt.toISOString(),
+    };
+  });
 
   const users: AdminUserItem[] = usersRaw.map((u) => ({
     id: u.id,
@@ -144,43 +222,166 @@ export async function getAdminBackofficeDataAction(): Promise<{
       ? Array.from(classroomSet).sort()
       : [];
 
-  const dateMap = new Map<string, AdminAttendanceDateSummary>();
+  const dateMap = new Map<
+    string,
+    AdminAttendanceDateSummary & {
+      classroomSet: Set<string>;
+      teacherSet: Set<string>;
+      studentList: AdminAttendanceDateStudent[];
+    }
+  >();
   for (const r of allAttendances) {
     const dIso = formatDateISO(r.date);
-    const item = dateMap.get(dIso) ?? {
-      dateIso: dIso,
-      totalRecords: 0,
-      presentCount: 0,
-      lateCount: 0,
-      absentCount: 0,
-      leaveCount: 0,
-    };
+    let item = dateMap.get(dIso);
+    if (!item) {
+      item = {
+        dateIso: dIso,
+        totalRecords: 0,
+        presentCount: 0,
+        lateCount: 0,
+        absentCount: 0,
+        leaveCount: 0,
+        classrooms: [],
+        teachers: [],
+        students: [],
+        classroomSet: new Set<string>(),
+        teacherSet: new Set<string>(),
+        studentList: [],
+      };
+      dateMap.set(dIso, item);
+    }
     item.totalRecords += 1;
     if (r.status === "PRESENT" || r.status === "EXEMPTION") item.presentCount += 1;
     else if (r.status === "LATE") item.lateCount += 1;
     else if (r.status === "ABSENT") item.absentCount += 1;
     else if (r.status === "LEAVE") item.leaveCount += 1;
-    dateMap.set(dIso, item);
+
+    if (r.student?.classroom) {
+      item.classroomSet.add(r.student.classroom);
+    }
+    if (r.recordedBy?.name) {
+      item.teacherSet.add(r.recordedBy.name);
+    }
+    if (r.student) {
+      const studentFullName = `${r.student.title}${r.student.firstName} ${r.student.lastName}`.trim();
+      item.studentList.push({
+        studentId: r.student.id,
+        studentCode: r.student.studentId,
+        fullName: studentFullName,
+        classroom: r.student.classroom,
+        status: r.status,
+      });
+    }
   }
 
-  const attendanceDates = Array.from(dateMap.values()).sort((a, b) =>
-    b.dateIso.localeCompare(a.dateIso)
-  );
+  const attendanceDates: AdminAttendanceDateSummary[] = Array.from(dateMap.values())
+    .map((item) => ({
+      dateIso: item.dateIso,
+      totalRecords: item.totalRecords,
+      presentCount: item.presentCount,
+      lateCount: item.lateCount,
+      absentCount: item.absentCount,
+      leaveCount: item.leaveCount,
+      classrooms: Array.from(item.classroomSet).sort(),
+      teachers: Array.from(item.teacherSet).sort(),
+      students: item.studentList,
+    }))
+    .sort((a, b) => b.dateIso.localeCompare(a.dateIso));
+
+  const remedials: AdminRemedialItem[] = remedialRecordsRaw.map((rem) => {
+    const isMakeup = rem.activityTitle?.includes("คลินิกแก้แถว");
+    const targetDateIso = formatDateISO(rem.targetDate);
+    const fullName = rem.student
+      ? `${rem.student.title}${rem.student.firstName} ${rem.student.lastName}`
+      : "ไม่ทราบชื่อ";
+    return {
+      id: rem.id,
+      studentId: rem.studentId,
+      studentCode: rem.student?.studentId ?? "-",
+      studentName: fullName,
+      classroom: rem.student?.classroom ?? "-",
+      targetDateIso,
+      activityTitle: rem.activityTitle ?? "แก้แถว",
+      description: rem.description,
+      hoursEarned: rem.hoursEarned,
+      proofUrl: rem.proofUrl,
+      status: rem.status as "APPROVED" | "PENDING" | "REJECTED",
+      approvedByName: rem.approvedBy?.name ?? null,
+      createdAtIso: rem.createdAt.toISOString(),
+      type: isMakeup ? "CLINIC_MAKEUP" : "SPECIAL_ACTIVITY",
+    };
+  });
 
   return {
     students,
     users,
     classrooms,
     attendanceDates,
+    remedials,
+    academicCalendar: getAcademicCalendarConfig(),
     systemStats: {
       totalStudents: students.length,
       activeStudents: students.filter((s) => s.status === "ACTIVE").length,
       inactiveStudents: students.filter((s) => s.status === "INACTIVE").length,
       totalUsers: users.length,
       totalAttendanceRecords: allAttendances.length,
-      totalRemedialRecords,
+      totalRemedialRecords: remedials.length,
     },
   };
+}
+
+export async function deleteAdminRemedialAction(remedialId: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  try {
+    const rem = await prisma.remedialRecord.findUnique({
+      where: { id: remedialId },
+      include: { student: true },
+    });
+
+    if (!rem) {
+      return {
+        success: false,
+        message: "ไม่พบรายการแก้แถวที่ต้องการลบ",
+      };
+    }
+
+    // หากเป็นรายการคลินิกแก้แถว (มีระบุวันที่คลินิก เช่น มาเข้าคลินิกแก้แถว (YYYY-MM-DD))
+    // ให้ลบการเช็คชื่อวันคลินิกออกด้วยเพื่อให้ระบบและสถิติซิงค์ถูกต้อง
+    const clinicMatch = rem.activityTitle?.match(/\((\d{4}-\d{2}-\d{2})\)/);
+    if (clinicMatch && clinicMatch[1]) {
+      const clinicDateUtc = toUTCDateOnly(clinicMatch[1]);
+      await prisma.attendanceRecord.deleteMany({
+        where: {
+          studentId: rem.studentId,
+          date: clinicDateUtc,
+        },
+      });
+    }
+
+    await prisma.remedialRecord.delete({
+      where: { id: remedialId },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/attendance/remedial");
+    revalidatePath("/dashboard");
+    revalidatePath("/attendance/check");
+    revalidatePath("/portal");
+    revalidatePath("/grades");
+
+    return {
+      success: true,
+      message: `ลบรายการแก้แถวของ ${rem.student ? `${rem.student.title}${rem.student.firstName} ${rem.student.lastName}` : "นักเรียน"} เรียบร้อยแล้ว`,
+    };
+  } catch (error) {
+    console.error("Failed to delete remedial record:", error);
+    return {
+      success: false,
+      message: "ไม่สามารถลบรายการแก้แถวได้",
+    };
+  }
 }
 
 export async function upsertStudentAction(

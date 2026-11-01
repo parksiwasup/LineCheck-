@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AppShell } from "@/components/layout/app-shell";
 import { auth } from "@/lib/auth";
+import { getAcademicCalendarConfig } from "@/lib/academic-calendar";
 
 const notoSansThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -44,6 +45,12 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const session = await auth();
+  const calendarConfig = getAcademicCalendarConfig();
+  const activeTerm =
+    calendarConfig.terms.find((t) => t.id === calendarConfig.activeTermId) ??
+    calendarConfig.terms.find((t) => t.isActive) ??
+    calendarConfig.terms[0];
+  const activeTermName = activeTerm ? activeTerm.name : "ภาคเรียนปัจจุบัน";
 
   return (
     <html lang="th" suppressHydrationWarning>
@@ -51,7 +58,7 @@ export default async function RootLayout({
         className={`${notoSansThai.className} min-h-dvh flex flex-col selection:bg-primary/20 selection:text-primary`}
       >
         <ThemeProvider>
-          <AppShell session={session}>
+          <AppShell session={session} activeTermName={activeTermName}>
             {children}
           </AppShell>
         </ThemeProvider>

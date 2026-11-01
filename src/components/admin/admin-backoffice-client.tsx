@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { th } from "date-fns/locale";
 import { toast } from "sonner";
 import {
@@ -20,6 +20,7 @@ import {
   Database,
   CheckCircle2,
   XCircle,
+  X,
   Loader2,
   Plus,
   LayoutGrid,
@@ -43,6 +44,7 @@ import {
   ArrowRight,
   Zap,
   ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { BulkImportModal } from "./bulk-import-modal";
@@ -54,9 +56,11 @@ import {
   upsertUserAction,
   deleteUserAction,
   deleteAttendanceByDateAction,
+  deleteAdminRemedialAction,
   type AdminStudentItem,
   type AdminUserItem,
   type AdminAttendanceDateSummary,
+  type AdminRemedialItem,
 } from "@/actions/admin";
 import { useAttendanceStore } from "@/store/use-attendance-store";
 import { cn } from "@/lib/utils";
@@ -87,8 +91,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
-type AdminSection = "overview" | "students" | "classrooms" | "users" | "logs";
+import { AcademicCalendarTab } from "@/components/admin/academic-calendar-tab";
+import {
+  DEFAULT_CALENDAR_CONFIG,
+  type AcademicCalendarConfig,
+} from "@/types/academic-calendar";
+
+type AdminSection =
+  | "overview"
+  | "students"
+  | "classrooms"
+  | "users"
+  | "logs"
+  | "remedials"
+  | "schedule";
 
 interface AdminBackofficeClientProps {
   initialData: {
@@ -96,6 +115,8 @@ interface AdminBackofficeClientProps {
     users: AdminUserItem[];
     classrooms: string[];
     attendanceDates: AdminAttendanceDateSummary[];
+    remedials?: AdminRemedialItem[];
+    academicCalendar?: AcademicCalendarConfig;
     systemStats: {
       totalStudents: number;
       activeStudents: number;
@@ -129,6 +150,10 @@ export function AdminBackofficeClient({
   const [isPending, startTransition] = React.useTransition();
   const [activeSection, setActiveSection] =
     React.useState<AdminSection>("students");
+  const [calendarConfig, setCalendarConfig] =
+    React.useState<AcademicCalendarConfig>(
+      initialData.academicCalendar || DEFAULT_CALENDAR_CONFIG
+    );
 
   // Student filters
   const [studentSearch, setStudentSearch] = React.useState("");
@@ -136,6 +161,194 @@ export function AdminBackofficeClient({
   const [statusFilter, setStatusFilter] = React.useState<
     "ALL" | "ACTIVE" | "INACTIVE"
   >("ALL");
+  const [studentTeacherFilter, setStudentTeacherFilter] = React.useState("ALL");
+
+  // User filters
+  const [userSearch, setUserSearch] = React.useState("");
+  const [userRoleFilter, setUserRoleFilter] = React.useState<"ALL" | "ADMIN" | "TEACHER">("ALL");
+
+  // Remedial filters & state
+  const [remedials, setRemedials] = React.useState<AdminRemedialItem[]>(
+    initialData.remedials ?? []
+  );
+  const [remedialSearch, setRemedialSearch] = React.useState("");
+  const [remedialDateFilter, setRemedialDateFilter] = React.useState("");
+  const [remedialClassroomFilter, setRemedialClassroomFilter] = React.useState("ALL");
+  const [remedialStudentFilter, setRemedialStudentFilter] = React.useState("ALL");
+  const [remedialTeacherFilter, setRemedialTeacherFilter] = React.useState("ALL");
+  const [remedialTypeFilter, setRemedialTypeFilter] = React.useState<"ALL" | "CLINIC_MAKEUP" | "SPECIAL_ACTIVITY">("ALL");
+
+  // Date logs filters & state
+  const [logSearch, setLogSearch] = React.useState("");
+  const [logDateFilter, setLogDateFilter] = React.useState("");
+  const [logClassroomFilter, setLogClassroomFilter] = React.useState("ALL");
+  const [logStudentFilter, setLogStudentFilter] = React.useState("ALL");
+  const [logTeacherFilter, setLogTeacherFilter] = React.useState("ALL");
+
+  // Thai Datepicker popover states
+  const [isLogDateOpen, setIsLogDateOpen] = React.useState(false);
+  const [isRemedialDateOpen, setIsRemedialDateOpen] = React.useState(false);
+
+  const formatThaiDisplay = (isoStr: string) => {
+    if (!isoStr) return "";
+    try {
+      const d = parseISO(isoStr);
+      const bYear = d.getFullYear() + 543;
+      return `${format(d, "d MMM", { locale: th })} ${bYear}`;
+    } catch {
+      return isoStr;
+    }
+  };
+
+  React.useEffect(() => {
+    if (initialData.remedials) {
+      setRemedials(initialData.remedials);
+    }
+  }, [initialData.remedials]);
+
+  // Teachers available across system
+  const availableTeachers = React.useMemo(() => {
+    const set = new Set<string>();
+    initialData.users.forEach((u) => {
+      if (u.name) set.add(u.name.trim());
+    });
+    initialData.attendanceDates.forEach((d) => {
+      d.teachers?.forEach((t) => set.add(t.trim()));
+    });
+    remedials.forEach((r) => {
+      if (r.approvedByName) set.add(r.approvedByName.trim());
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [initialData.users, initialData.attendanceDates, remedials]);
+
+  // Students available for remedial dropdown (filtered by selected classroom if any)
+  const availableStudentsForRemedials = React.useMemo(() => {
+    if (remedialClassroomFilter === "ALL") {
+      return initialData.students;
+    }
+    return initialData.students.filter(
+      (s) => s.classroom === remedialClassroomFilter
+    );
+  }, [initialData.students, remedialClassroomFilter]);
+
+  // Students available for date logs dropdown (filtered by selected classroom if any)
+  const availableStudentsForLogs = React.useMemo(() => {
+    if (logClassroomFilter === "ALL") {
+      return initialData.students;
+    }
+    return initialData.students.filter(
+      (s) => s.classroom === logClassroomFilter
+    );
+  }, [initialData.students, logClassroomFilter]);
+
+  const filteredRemedials = React.useMemo(() => {
+    const q = remedialSearch.trim().toLowerCase();
+    return remedials.filter((rem) => {
+      const matchSearch =
+        !q ||
+        rem.studentCode.toLowerCase().includes(q) ||
+        rem.studentName.toLowerCase().includes(q) ||
+        rem.classroom.toLowerCase().includes(q) ||
+        rem.activityTitle.toLowerCase().includes(q) ||
+        rem.targetDateIso.includes(q) ||
+        (rem.approvedByName && rem.approvedByName.toLowerCase().includes(q));
+
+      const matchDate =
+        !remedialDateFilter ||
+        rem.targetDateIso === remedialDateFilter ||
+        rem.createdAtIso.startsWith(remedialDateFilter) ||
+        rem.activityTitle.includes(remedialDateFilter);
+
+      const matchClassroom =
+        remedialClassroomFilter === "ALL" || rem.classroom === remedialClassroomFilter;
+
+      const matchStudent =
+        remedialStudentFilter === "ALL" ||
+        rem.studentCode === remedialStudentFilter ||
+        rem.studentId === remedialStudentFilter;
+
+      const matchTeacher =
+        remedialTeacherFilter === "ALL" ||
+        rem.approvedByName === remedialTeacherFilter;
+
+      const matchType =
+        remedialTypeFilter === "ALL" || rem.type === remedialTypeFilter;
+
+      return (
+        matchSearch &&
+        matchDate &&
+        matchClassroom &&
+        matchStudent &&
+        matchTeacher &&
+        matchType
+      );
+    });
+  }, [
+    remedials,
+    remedialSearch,
+    remedialDateFilter,
+    remedialClassroomFilter,
+    remedialStudentFilter,
+    remedialTeacherFilter,
+    remedialTypeFilter,
+  ]);
+
+  const filteredAttendanceDates = React.useMemo(() => {
+    const q = logSearch.trim().toLowerCase();
+    return initialData.attendanceDates.filter((d) => {
+      // ค้นหาครอบคลุมทั้งรหัสนักเรียน, ชื่อ-สกุล, ห้องเรียน, ครูผู้เช็ค, วันที่ ISO และชื่อวันภาษาไทย
+      const matchSearch =
+        !q ||
+        d.dateIso.includes(q) ||
+        format(new Date(d.dateIso), "วันEEEEที่ d MMMM yyyy", { locale: th })
+          .toLowerCase()
+          .includes(q) ||
+        format(new Date(d.dateIso), "d MMMM yyyy", { locale: th })
+          .toLowerCase()
+          .includes(q) ||
+        d.classrooms?.some((c) => c.toLowerCase().includes(q)) ||
+        d.teachers?.some((t) => t.toLowerCase().includes(q)) ||
+        d.students?.some(
+          (s) =>
+            s.studentCode.toLowerCase().includes(q) ||
+            s.fullName.toLowerCase().includes(q) ||
+            s.classroom.toLowerCase().includes(q)
+        );
+
+      const matchDate = !logDateFilter || d.dateIso === logDateFilter;
+
+      const matchClassroom =
+        logClassroomFilter === "ALL" ||
+        d.classrooms?.includes(logClassroomFilter);
+
+      const matchStudent =
+        logStudentFilter === "ALL" ||
+        d.students?.some(
+          (s) =>
+            s.studentId === logStudentFilter ||
+            s.studentCode === logStudentFilter
+        );
+
+      const matchTeacher =
+        logTeacherFilter === "ALL" ||
+        d.teachers?.includes(logTeacherFilter);
+
+      return (
+        matchSearch &&
+        matchDate &&
+        matchClassroom &&
+        matchStudent &&
+        matchTeacher
+      );
+    });
+  }, [
+    initialData.attendanceDates,
+    logSearch,
+    logDateFilter,
+    logClassroomFilter,
+    logStudentFilter,
+    logTeacherFilter,
+  ]);
 
   // Student Dialog state
   const [isStudentModalOpen, setIsStudentModalOpen] = React.useState(false);
@@ -180,9 +393,10 @@ export function AdminBackofficeClient({
     title: string;
     description: string;
     itemName: string;
+    itemSubtitle?: string;
     itemDetail?: string;
     itemBadge?: string;
-    onConfirm: () => void;
+    onConfirm: () => Promise<void> | void;
   }>({
     isOpen: false,
     title: "",
@@ -191,18 +405,87 @@ export function AdminBackofficeClient({
     onConfirm: () => {},
   });
 
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
+  const handleConfirmDelete = async () => {
+    if (isDeleting) return;
+    try {
+      setIsDeleting(true);
+      await deleteDialog.onConfirm();
+      setDeleteDialog((prev) => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error("Delete action failed:", error);
+      toast.error("เกิดข้อผิดพลาดในการลบข้อมูล กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const filteredStudents = React.useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
     return initialData.students.filter((s) => {
       const matchClass =
         classroomFilter === "ALL" || s.classroom === classroomFilter;
       const matchStatus = statusFilter === "ALL" || s.status === statusFilter;
+
+      // Filter by teacher (advisor of this classroom)
+      let matchTeacher = true;
+      if (studentTeacherFilter !== "ALL") {
+        const teacherUser = initialData.users.find(
+          (u) => u.name.trim() === studentTeacherFilter.trim() || u.id === studentTeacherFilter
+        );
+        if (teacherUser && teacherUser.classrooms) {
+          const allowedRooms = teacherUser.classrooms.split(",").map((c) => c.trim());
+          matchTeacher = allowedRooms.includes(s.classroom);
+        } else {
+          matchTeacher = false;
+        }
+      }
+
+      // Check if search query matches student ID, full name, classroom, or teacher name advising this classroom
+      let matchAdvisorSearch = false;
+      if (q) {
+        const advisors = initialData.users.filter((u) => {
+          if (!u.classrooms) return false;
+          const rooms = u.classrooms.split(",").map((c) => c.trim());
+          return rooms.includes(s.classroom);
+        });
+        matchAdvisorSearch = advisors.some((a) => a.name.toLowerCase().includes(q));
+      }
+
       const matchQuery =
-        !studentSearch.trim() ||
-        s.studentId.toLowerCase().includes(studentSearch.toLowerCase()) ||
-        s.fullName.toLowerCase().includes(studentSearch.toLowerCase());
-      return matchClass && matchStatus && matchQuery;
+        !q ||
+        s.studentId.toLowerCase().includes(q) ||
+        s.fullName.toLowerCase().includes(q) ||
+        s.classroom.toLowerCase().includes(q) ||
+        matchAdvisorSearch;
+
+      return matchClass && matchStatus && matchTeacher && matchQuery;
     });
-  }, [initialData.students, classroomFilter, statusFilter, studentSearch]);
+  }, [
+    initialData.students,
+    initialData.users,
+    classroomFilter,
+    statusFilter,
+    studentTeacherFilter,
+    studentSearch,
+  ]);
+
+  const filteredUsers = React.useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return initialData.users.filter((u) => {
+      const matchQuery =
+        !q ||
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.classrooms && u.classrooms.toLowerCase().includes(q));
+
+      const matchRole =
+        userRoleFilter === "ALL" || u.role === userRoleFilter;
+
+      return matchQuery && matchRole;
+    });
+  }, [initialData.users, userSearch, userRoleFilter]);
 
   const handleExportStudentsExcel = () => {
     const listToExport = filteredStudents;
@@ -214,9 +497,10 @@ export function AdminBackofficeClient({
       "นามสกุล": s.lastName,
       "ห้องเรียน": s.classroom,
       "สถานะการศึกษา": s.status === "ACTIVE" ? "กำลังศึกษา" : "พัก/ย้ายออก",
-      "ประวัติเช็คชื่อ (วัน)": s.attendanceCount,
+      "มาแถวปกติ (วัน)": s.presentCount,
       "ขาดแถว (วัน)": s.absentCount,
-      "แก้แถว (ครั้ง)": s.remedialCount,
+      "แก้แถว (รายการ)": s.remedialCount,
+      "เช็คชื่อทั้งหมด (วัน)": s.attendanceCount,
       "วันที่ลงทะเบียน": format(new Date(s.createdAtIso), "dd/MM/yyyy"),
     }));
 
@@ -324,18 +608,16 @@ export function AdminBackofficeClient({
       title: "ยืนยันการลบข้อมูลนักเรียน",
       description: "ข้อมูลประวัติการเข้าแถว บันทึกเวลา และสถิติแก้แถวทั้งหมดของนักเรียนคนนี้จะถูกลบออกจากฐานข้อมูลถาวร",
       itemName: `${st.studentId} ${st.fullName}`,
-      itemDetail: `ห้องเรียน: ${st.classroom} • ประวัติเช็คชื่อ ${st.attendanceCount} วัน • ขาดแถว ${st.absentCount} วัน`,
+      itemDetail: `ห้องเรียน: ${st.classroom} • มาแถว: ${st.presentCount}/${st.attendanceCount} วัน • ขาดแถว: ${st.absentCount} วัน`,
       itemBadge: st.status === "ACTIVE" ? "กำลังศึกษา" : "พักการเรียน",
-      onConfirm: () => {
-        startTransition(async () => {
-          const res = await deleteStudentAction(st.id);
-          if (res.success) {
-            toast.success(res.message);
-            router.refresh();
-          } else {
-            toast.error(res.message);
-          }
-        });
+      onConfirm: async () => {
+        const res = await deleteStudentAction(st.id);
+        if (res.success) {
+          toast.success(res.message);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
       },
     });
   };
@@ -394,16 +676,14 @@ export function AdminBackofficeClient({
       itemName: u.name,
       itemDetail: `อีเมล: ${u.email} • เช็คชื่อ ${u.recordedCount} ครั้ง • อนุมัติแก้แถว ${u.approvedCount} รายการ`,
       itemBadge: u.role === "ADMIN" ? "ADMIN ฝ่ายปกครอง" : "TEACHER ครูที่ปรึกษา",
-      onConfirm: () => {
-        startTransition(async () => {
-          const res = await deleteUserAction(u.id);
-          if (res.success) {
-            toast.success(res.message);
-            router.refresh();
-          } else {
-            toast.error(res.message);
-          }
-        });
+      onConfirm: async () => {
+        const res = await deleteUserAction(u.id);
+        if (res.success) {
+          toast.success(res.message);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
       },
     });
   };
@@ -441,18 +721,43 @@ export function AdminBackofficeClient({
       itemName: `ประวัติการเข้าแถววันที่ ${formattedDate}`,
       itemDetail: `จำนวนข้อมูลที่จะถูกลบ: ${count} รายการ`,
       itemBadge: "ลบประวัติวัน",
-      onConfirm: () => {
-        startTransition(async () => {
-          const res = await deleteAttendanceByDateAction(dateIso);
-          if (res.success) {
-            toast.success(res.message);
-            router.refresh();
-          } else {
-            toast.error(res.message);
-          }
-        });
+      onConfirm: async () => {
+        const res = await deleteAttendanceByDateAction(dateIso);
+        if (res.success) {
+          toast.success(res.message);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
       },
     });
+  };
+
+  const handleDeleteRemedial = (rem: AdminRemedialItem) => {
+    setDeleteDialog({
+      isOpen: true,
+      title: "ยืนยันการลบรายการแก้แถว",
+      description: `ต้องการลบรายการแก้แถวของ ${rem.studentName} (${rem.studentCode}) วันที่ชดเชย ${rem.targetDateIso} หรือไม่? การลบนี้จะส่งผลต่อสถิติและซิงค์ข้อมูลกับระบบทันที`,
+      itemName: rem.studentName,
+      itemSubtitle: rem.activityTitle,
+      itemDetail: `ห้อง ${rem.classroom} • รหัส ${rem.studentCode} • วันที่ชดเชย: ${rem.targetDateIso}`,
+      itemBadge: rem.type === "CLINIC_MAKEUP" ? "คลินิกแก้แถว" : "กิจกรรมพิเศษ",
+      onConfirm: async () => {
+        const res = await deleteAdminRemedialAction(rem.id);
+        if (res.success) {
+          toast.success(res.message);
+          setRemedials((prev) => prev.filter((r) => r.id !== rem.id));
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
+      },
+    });
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    toast.success(`คัดลอกรหัส ${code} เรียบร้อยแล้ว`);
   };
 
   const { systemStats } = initialData;
@@ -521,6 +826,28 @@ export function AdminBackofficeClient({
       shadow: "shadow-rose-500/25",
       iconColor: "text-rose-600 dark:text-rose-400",
       iconBg: "bg-rose-500/15",
+    },
+    {
+      id: "remedials",
+      label: "จัดการข้อมูลการแก้แถว",
+      sub: "Remedial & Clinic",
+      count: remedials.length,
+      icon: Sparkles,
+      gradient: "from-violet-600 via-purple-600 to-indigo-600",
+      shadow: "shadow-violet-500/25",
+      iconColor: "text-violet-600 dark:text-violet-400",
+      iconBg: "bg-violet-500/15",
+    },
+    {
+      id: "schedule",
+      label: "จัดการวันมาและวันหยุด",
+      sub: "Terms & Calendar Rules",
+      count: calendarConfig.terms.length,
+      icon: CalendarDays,
+      gradient: "from-teal-600 via-emerald-600 to-indigo-600",
+      shadow: "shadow-teal-500/25",
+      iconColor: "text-teal-600 dark:text-teal-400",
+      iconBg: "bg-teal-500/15",
     },
   ];
 
@@ -797,11 +1124,11 @@ export function AdminBackofficeClient({
                           <Users className="h-6 w-6" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <CardTitle className="text-base font-black text-foreground">
                               ฐานข้อมูลนักเรียน
                             </CardTitle>
-                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25 uppercase tracking-wider">
+                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                               STUDENTS 👨‍🎓
                             </span>
                           </div>
@@ -823,12 +1150,12 @@ export function AdminBackofficeClient({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1.5 justify-end">
-                        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-2xs">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-2xs shrink-0 whitespace-nowrap">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
                           <span>กำลังศึกษา {systemStats.activeStudents}</span>
                         </span>
                         {systemStats.inactiveStudents > 0 && (
-                          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-muted text-muted-foreground border border-border/80">
+                          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-muted text-muted-foreground border border-border/80 shrink-0 whitespace-nowrap">
                             <span>พัก/ย้าย {systemStats.inactiveStudents}</span>
                           </span>
                         )}
@@ -858,11 +1185,11 @@ export function AdminBackofficeClient({
                           <ShieldCheck className="h-6 w-6" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <CardTitle className="text-base font-black text-foreground">
                               ครูที่ปรึกษา & ผู้ดูแลระบบ
                             </CardTitle>
-                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 uppercase tracking-wider">
+                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                               USERS 👑
                             </span>
                           </div>
@@ -883,7 +1210,7 @@ export function AdminBackofficeClient({
                         <span className="text-sm font-bold text-muted-foreground">บัญชี</span>
                       </div>
 
-                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 shadow-2xs">
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 shadow-2xs shrink-0 whitespace-nowrap">
                         <Crown className="h-3 w-3 text-amber-500" />
                         <span>สิทธิ์ปัจจุบัน: {activeRole}</span>
                       </span>
@@ -912,11 +1239,11 @@ export function AdminBackofficeClient({
                           <School className="h-6 w-6" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <CardTitle className="text-base font-black text-foreground">
                               ห้องเรียนทั้งหมด
                             </CardTitle>
-                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 uppercase tracking-wider">
+                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                               ROOMS 🏫
                             </span>
                           </div>
@@ -972,11 +1299,11 @@ export function AdminBackofficeClient({
                           <Database className="h-6 w-6" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <CardTitle className="text-base font-black text-foreground">
                               ข้อมูลเช็คชื่อ & แก้แถวสะสม
                             </CardTitle>
-                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25 uppercase tracking-wider">
+                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                               RECORDS ⚡
                             </span>
                           </div>
@@ -997,21 +1324,36 @@ export function AdminBackofficeClient({
                         <span className="text-sm font-bold text-muted-foreground">รายการ</span>
                       </div>
 
-                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-purple-500/15 text-purple-800 dark:text-purple-300 border border-purple-500/30 shadow-2xs">
-                        <Zap className="h-3 w-3 text-purple-600" />
-                        <span>แก้แถว {systemStats.totalRemedialRecords} รายการ</span>
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection("remedials")}
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-purple-500/15 text-purple-800 dark:text-purple-300 border border-purple-500/30 shadow-2xs hover:bg-purple-500/25 transition-colors cursor-pointer"
+                      >
+                        <Sparkles className="h-3 w-3 text-purple-600" />
+                        <span>แก้แถว {remedials.length} รายการ</span>
+                      </button>
                     </div>
 
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full h-10 rounded-xl bg-amber-600/10 hover:bg-amber-600 hover:text-white border border-amber-500/25 text-amber-700 dark:text-amber-300 font-bold transition-all duration-200 cursor-pointer group/btn shadow-2xs"
-                      onClick={() => setActiveSection("logs")}
-                    >
-                      <span>จัดการประวัติเช็คชื่อรายวัน</span>
-                      <ArrowRight className="h-4 w-4 ml-1.5 group-hover/btn:translate-x-1 transition-transform" />
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 rounded-xl bg-amber-600/10 hover:bg-amber-600 hover:text-white border border-amber-500/25 text-amber-700 dark:text-amber-300 font-bold transition-all duration-200 cursor-pointer group/btn shadow-2xs text-xs"
+                        onClick={() => setActiveSection("logs")}
+                      >
+                        <span>ประวัติเช็คชื่อ</span>
+                        <ArrowRight className="h-3.5 w-3.5 ml-1 group-hover/btn:translate-x-1 transition-transform" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 rounded-xl bg-purple-600/10 hover:bg-purple-600 hover:text-white border border-purple-500/25 text-purple-700 dark:text-purple-300 font-bold transition-all duration-200 cursor-pointer group/btn shadow-2xs text-xs"
+                        onClick={() => setActiveSection("remedials")}
+                      >
+                        <span>รายการแก้แถว</span>
+                        <ArrowRight className="h-3.5 w-3.5 ml-1 group-hover/btn:translate-x-1 transition-transform" />
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -1025,16 +1367,16 @@ export function AdminBackofficeClient({
               <div className="relative overflow-hidden rounded-3xl border border-blue-500/25 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-card backdrop-blur-xl shadow-lg p-6">
                 <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent pointer-events-none" />
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <div className="h-13 w-13 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30 shrink-0 ring-2 ring-white/30 dark:ring-white/10">
                       <Users className="h-6 w-6" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-black text-foreground tracking-tight">
                           จัดการทะเบียนรายชื่อนักเรียน (Student Directory)
                         </h3>
-                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 uppercase tracking-wider">
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                           {filteredStudents.length} นักเรียน 👨‍🎓
                         </span>
                       </div>
@@ -1061,50 +1403,71 @@ export function AdminBackofficeClient({
                 {/* Glossy top sheen line */}
                 <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent pointer-events-none" />
 
-                <div className="p-4 border-b border-border/70 bg-muted/20 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-                  {/* Search Input */}
-                  <div className="relative w-full xl:w-72">
-                    <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="ค้นหารหัส / ชื่อ-สกุล..."
-                      value={studentSearch}
-                      onChange={(e) => setStudentSearch(e.target.value)}
-                      className="h-9 pl-8 text-xs rounded-xl bg-background border-border/80 focus:ring-2 focus:ring-primary/20"
-                    />
+                <div className="p-4 border-b border-border/70 bg-card/60 space-y-3">
+                  {/* Row 1: Search Input + Excel Actions */}
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="ค้นหาด้วยรหัสนักศึกษา, ชื่อ-สกุล, ห้องเรียน..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        className="h-10 pl-9 text-xs rounded-xl bg-muted/40 border-border/70 focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsBulkImportOpen(true)}
+                        className="h-10 gap-1.5 text-xs font-bold rounded-xl border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer"
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>นำเข้า Excel</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportStudentsExcel}
+                        className="h-10 gap-1.5 text-xs font-bold rounded-xl border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span>ส่งออก Excel</span>
+                      </Button>
+                    </div>
                   </div>
 
-                  {/* Classroom Segmented Filter + Status + Excel Actions */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Classroom Segmented Filter */}
-                    <div className="flex flex-wrap items-center gap-1 rounded-xl border border-border/80 bg-background/80 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setClassroomFilter("ALL")}
-                        className={cn(
-                          "rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer",
-                          classroomFilter === "ALL"
-                            ? "bg-primary text-primary-foreground shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        ทุกห้อง
-                      </button>
+                  {/* Row 2: Classroom & Status Filters */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+                    {/* Classroom Dropdown */}
+                    <select
+                      value={classroomFilter}
+                      onChange={(e) => setClassroomFilter(e.target.value)}
+                      className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="ALL">ทุกห้องเรียน ({initialData.classrooms.length} ห้อง)</option>
                       {initialData.classrooms.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => setClassroomFilter(c)}
-                          className={cn(
-                            "rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer",
-                            classroomFilter === c
-                              ? "bg-primary text-primary-foreground shadow-xs"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {c}
-                        </button>
+                        <option key={c} value={c}>
+                          ห้อง {c}
+                        </option>
                       ))}
-                    </div>
+                    </select>
+
+                    {/* Teacher / Advisor Dropdown */}
+                    <select
+                      value={studentTeacherFilter}
+                      onChange={(e) => setStudentTeacherFilter(e.target.value)}
+                      className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="ALL">ครูทุกคน ({availableTeachers.length} ท่าน)</option>
+                      {availableTeachers.map((t) => (
+                        <option key={t} value={t}>
+                          ครู {t}
+                        </option>
+                      ))}
+                    </select>
 
                     {/* Status Dropdown */}
                     <select
@@ -1114,57 +1477,56 @@ export function AdminBackofficeClient({
                           e.target.value as "ALL" | "ACTIVE" | "INACTIVE"
                         )
                       }
-                      className="h-9 rounded-xl border border-border/80 bg-background px-2.5 text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/20"
+                      className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                     >
-                      <option value="ALL">ทุกสถานะ</option>
+                      <option value="ALL">ทุกสถานะการศึกษา</option>
                       <option value="ACTIVE">กำลังศึกษา (ACTIVE)</option>
                       <option value="INACTIVE">พัก/ย้ายออก (INACTIVE)</option>
                     </select>
 
-                    {/* Excel CSV Import / Export */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsBulkImportOpen(true)}
-                      className="h-9 gap-1.5 text-xs font-bold rounded-xl border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer shadow-2xs"
-                    >
-                      <FileSpreadsheet className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">นำเข้า</span> Excel
-                    </Button>
+                    {(studentSearch || classroomFilter !== "ALL" || studentTeacherFilter !== "ALL" || statusFilter !== "ALL") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setStudentSearch("");
+                          setClassroomFilter("ALL");
+                          setStudentTeacherFilter("ALL");
+                          setStatusFilter("ALL");
+                        }}
+                        className="h-9 rounded-xl text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 cursor-pointer"
+                      >
+                        ล้างตัวกรองทั้งหมด
+                      </Button>
+                    )}
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleExportStudentsExcel}
-                      className="h-9 gap-1.5 text-xs font-bold rounded-xl border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer shadow-2xs"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">ส่งออก</span> Excel
-                    </Button>
+                    <span className="text-[11px] text-muted-foreground ml-auto font-medium">
+                      แสดง {filteredStudents.length} จาก {initialData.students.length} คน
+                    </span>
                   </div>
                 </div>
 
               <CardContent className="p-0">
-                <div className="hidden md:block overflow-x-auto">
-                  <Table>
+                <div className="hidden md:block">
+                  <Table className="w-full">
                     <TableHeader className="bg-muted/40">
                       <TableRow className="hover:bg-transparent border-b border-border/70">
-                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-3 px-4">
+                        <TableHead className="w-[125px] font-black text-xs uppercase tracking-wider text-muted-foreground py-2.5 px-3 whitespace-nowrap">
                           รหัสนักเรียน
                         </TableHead>
-                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-3 px-4">
+                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-2.5 px-3">
                           ข้อมูลนักเรียน (ชื่อ - สกุล)
                         </TableHead>
-                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-3 px-4">
+                        <TableHead className="w-[90px] font-black text-xs uppercase tracking-wider text-muted-foreground py-2.5 px-3 text-center whitespace-nowrap">
                           ห้องเรียน
                         </TableHead>
-                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-3 px-4">
-                          สถิติเช็คชื่อ / แก้แถว
+                        <TableHead className="w-[190px] font-black text-xs uppercase tracking-wider text-muted-foreground py-2.5 px-3 whitespace-nowrap">
+                          สถิติเข้าแถว / แก้แถว
                         </TableHead>
-                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-3 px-4">
+                        <TableHead className="w-[110px] font-black text-xs uppercase tracking-wider text-muted-foreground py-2.5 px-3 text-center whitespace-nowrap">
                           สถานะการศึกษา
                         </TableHead>
-                        <TableHead className="font-black text-xs uppercase tracking-wider text-muted-foreground py-3 px-4 text-right">
+                        <TableHead className="w-[125px] font-black text-xs uppercase tracking-wider text-muted-foreground py-2.5 px-3 text-right whitespace-nowrap">
                           จัดการ
                         </TableHead>
                       </TableRow>
@@ -1216,9 +1578,9 @@ export function AdminBackofficeClient({
                               className="hover:bg-primary/[0.03] transition-colors border-b border-border/60 group"
                             >
                               {/* รหัสนักเรียน */}
-                              <TableCell className="font-mono font-bold text-primary py-3.5 px-4">
+                              <TableCell className="font-mono font-bold text-primary py-2.5 px-3 whitespace-nowrap">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-black text-xs px-2.5 py-1 rounded-xl bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 shadow-2xs tracking-wider">
+                                  <span className="font-mono font-black text-xs px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 shadow-2xs tracking-wider">
                                     {st.studentId}
                                   </span>
                                   <button
@@ -1239,11 +1601,11 @@ export function AdminBackofficeClient({
                               </TableCell>
 
                               {/* ชื่อ-นามสกุล พร้อม Initial Avatar */}
-                              <TableCell className="py-3.5 px-4">
-                                <div className="flex items-center gap-3">
+                              <TableCell className="py-2.5 px-3">
+                                <div className="flex items-center gap-2.5 min-w-0">
                                   <div
                                     className={cn(
-                                      "h-9 w-9 rounded-xl flex items-center justify-center text-xs font-black shadow-xs shrink-0",
+                                      "h-8 w-8 rounded-xl flex items-center justify-center text-[11px] font-black shadow-xs shrink-0",
                                       isFemale
                                         ? "bg-gradient-to-tr from-pink-500 via-rose-500 to-purple-600 text-white"
                                         : "bg-gradient-to-tr from-blue-500 via-indigo-600 to-sky-600 text-white"
@@ -1252,10 +1614,10 @@ export function AdminBackofficeClient({
                                     {initials}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="font-black text-xs text-foreground truncate group-hover:text-primary transition-colors">
+                                    <p className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors">
                                       {st.fullName}
                                     </p>
-                                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                                    <p className="text-[10.5px] text-muted-foreground truncate mt-0.5">
                                       {st.title} • ลงทะเบียนในระบบ
                                     </p>
                                   </div>
@@ -1263,45 +1625,50 @@ export function AdminBackofficeClient({
                               </TableCell>
 
                               {/* ห้องเรียน */}
-                              <TableCell className="py-3.5 px-4">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs font-bold border border-emerald-500/25 shadow-2xs">
+                              <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs font-bold border border-emerald-500/25 shadow-2xs">
                                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                   <span>{st.classroom}</span>
                                 </span>
                               </TableCell>
 
-                              {/* สถิติเช็คชื่อ / แก้แถว */}
-                              <TableCell className="py-3.5 px-4">
-                                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-500/25 shadow-2xs">
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    <span>เช็ค {st.attendanceCount} วัน</span>
+                              {/* สถิติเข้าแถว / แก้แถว */}
+                              <TableCell className="py-2.5 px-3 whitespace-nowrap">
+                                {st.attendanceCount === 0 ? (
+                                  <span className="text-xs text-muted-foreground/60 italic font-medium">
+                                    ยังไม่มีประวัติ
                                   </span>
+                                ) : st.absentCount === 0 ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-500/25 shadow-2xs">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    <span>มาครบ 100% ({st.attendanceCount} วัน)</span>
+                                  </span>
+                                ) : (
+                                  <div className="flex flex-col gap-0.5 items-start">
+                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 text-xs font-bold border border-rose-500/25 shadow-2xs">
+                                        <XCircle className="h-3.5 w-3.5" />
+                                        <span>ขาด {st.absentCount} วัน</span>
+                                      </span>
 
-                                  {st.absentCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 text-xs font-bold border border-rose-500/25 shadow-2xs">
-                                      <XCircle className="h-3 w-3" />
-                                      <span>ขาด {st.absentCount}</span>
+                                      {st.remedialCount > 0 && (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 text-xs font-bold border border-purple-500/25 shadow-2xs">
+                                          <Zap className="h-3 w-3 text-purple-500" />
+                                          <span>แก้แล้ว {st.remedialCount}</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10.5px] text-muted-foreground font-medium pl-1">
+                                      มา {st.presentCount}/{st.attendanceCount} วัน ({Math.round((st.presentCount / st.attendanceCount) * 100)}%)
                                     </span>
-                                  ) : (
-                                    <span className="text-[10.5px] font-bold text-emerald-600 dark:text-emerald-400">
-                                      🌟 100%
-                                    </span>
-                                  )}
-
-                                  {st.remedialCount > 0 && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-300 text-xs font-bold border border-purple-500/25 shadow-2xs">
-                                      <Zap className="h-3 w-3" />
-                                      <span>แก้ {st.remedialCount}</span>
-                                    </span>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
                               </TableCell>
 
                               {/* สถานะ */}
-                              <TableCell className="py-3.5 px-4">
+                              <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
                                 {st.status === "ACTIVE" ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 shadow-2xs">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 shadow-2xs shrink-0 whitespace-nowrap">
                                     <span className="relative flex h-2 w-2">
                                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
@@ -1309,7 +1676,7 @@ export function AdminBackofficeClient({
                                     <span>กำลังศึกษา</span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-muted text-muted-foreground border border-border/80">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-muted text-muted-foreground border border-border/80 shrink-0 whitespace-nowrap">
                                     <span className="h-2 w-2 rounded-full bg-slate-400" />
                                     <span>พัก/ย้ายออก</span>
                                   </span>
@@ -1317,13 +1684,13 @@ export function AdminBackofficeClient({
                               </TableCell>
 
                               {/* จัดการ */}
-                              <TableCell className="text-right py-3.5 px-4">
-                                <div className="inline-flex items-center gap-1.5">
+                              <TableCell className="text-right py-2.5 px-3 whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1 justify-end">
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleOpenEditStudent(st)}
-                                    className="h-8 px-2.5 rounded-xl font-bold text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary transition-all cursor-pointer shadow-2xs"
+                                    className="h-7.5 px-2 rounded-lg font-bold text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary transition-all cursor-pointer shadow-2xs"
                                   >
                                     <Edit3 className="h-3.5 w-3.5 mr-1" />
                                     <span>แก้ไข</span>
@@ -1334,14 +1701,14 @@ export function AdminBackofficeClient({
                                     title={st.status === "ACTIVE" ? "เปลี่ยนเป็นพักการเรียน" : "เปลี่ยนเป็นกำลังศึกษา"}
                                     onClick={() => handleToggleStudentStatus(st)}
                                     disabled={isPending}
-                                    className="h-8 w-8 p-0 rounded-xl hover:bg-amber-500/10 text-muted-foreground hover:text-amber-600 transition-all cursor-pointer"
+                                    className="h-7.5 w-7.5 p-0 rounded-lg hover:bg-amber-500/10 text-muted-foreground hover:text-amber-600 transition-all cursor-pointer"
                                   >
                                     <Power className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-8 w-8 p-0 rounded-xl hover:bg-rose-500/10 text-rose-600 transition-all cursor-pointer"
+                                    className="h-7.5 w-7.5 p-0 rounded-lg hover:bg-rose-500/10 text-rose-600 transition-all cursor-pointer"
                                     onClick={() => handleDeleteStudent(st)}
                                     disabled={isPending}
                                     title="ลบข้อมูลนักเรียน"
@@ -1389,14 +1756,27 @@ export function AdminBackofficeClient({
                                 </span>
                               </div>
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                ห้อง {st.classroom} • เช็คชื่อ {st.attendanceCount} วัน {st.absentCount > 0 && <span className="text-rose-600 font-bold">(ขาด {st.absentCount})</span>}
+                                ห้อง {st.classroom} •{" "}
+                                {st.attendanceCount === 0 ? (
+                                  "ยังไม่มีข้อมูลเช็คชื่อ"
+                                ) : st.absentCount === 0 ? (
+                                  <span className="text-emerald-600 font-bold">มาครบ 100% ({st.attendanceCount} วัน)</span>
+                                ) : (
+                                  <>
+                                    มา {st.presentCount}/{st.attendanceCount} วัน{" "}
+                                    <span className="text-rose-600 font-bold">(ขาด {st.absentCount} วัน)</span>
+                                    {st.remedialCount > 0 && (
+                                      <span className="text-purple-600 font-bold ml-1">• แก้แล้ว {st.remedialCount}</span>
+                                    )}
+                                  </>
+                                )}
                               </p>
                             </div>
                           </div>
 
                           <span
                             className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              "text-[10px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap inline-flex items-center",
                               st.status === "ACTIVE"
                                 ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/30"
                                 : "bg-muted text-muted-foreground border-border/80"
@@ -1467,16 +1847,16 @@ export function AdminBackofficeClient({
               <div className="relative overflow-hidden rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-card backdrop-blur-xl shadow-lg p-6">
                 <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent pointer-events-none" />
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <div className="h-13 w-13 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0 ring-2 ring-white/30 dark:ring-white/10">
                       <School className="h-6 w-6" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-black text-foreground tracking-tight">
                           จัดการห้องเรียนและจำนวนนักเรียนรายห้อง
                         </h3>
-                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                           {classroomBreakdown.length} ห้องเรียน 🏫
                         </span>
                       </div>
@@ -1521,11 +1901,11 @@ export function AdminBackofficeClient({
                           <School className="h-6 w-6" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h4 className="font-black text-lg text-foreground tracking-tight">
                               ห้อง {item.classroom}
                             </h4>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 shrink-0 whitespace-nowrap inline-flex items-center">
                               มัธยมศึกษา
                             </span>
                           </div>
@@ -1607,16 +1987,16 @@ export function AdminBackofficeClient({
               <div className="relative overflow-hidden rounded-3xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-card backdrop-blur-xl shadow-lg p-6">
                 <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent pointer-events-none" />
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <div className="h-13 w-13 rounded-2xl bg-gradient-to-tr from-amber-500 via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 shrink-0 ring-2 ring-white/30 dark:ring-white/10">
                       <Crown className="h-6 w-6" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-black text-foreground tracking-tight">
                           จัดการบัญชีครูที่ปรึกษา (TEACHER) และผู้ดูแลระบบฝ่ายปกครอง (ADMIN)
                         </h3>
-                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 uppercase tracking-wider">
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                           {initialData.users.length} บัญชีผู้ใช้งาน 🛡️
                         </span>
                       </div>
@@ -1636,9 +2016,69 @@ export function AdminBackofficeClient({
                 </div>
               </div>
 
+              {/* Toolbar & Filters for Users */}
+              <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                  {/* Search Input */}
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="ค้นหาชื่อครู, อีเมล, ห้องเรียนที่ดูแล..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="pl-9 h-10 rounded-xl text-xs bg-muted/40 border-border/70"
+                    />
+                  </div>
+
+                  {/* Role Filter & Clear */}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={userRoleFilter}
+                      onChange={(e) => setUserRoleFilter(e.target.value as "ALL" | "ADMIN" | "TEACHER")}
+                      className="h-10 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="ALL">ทุกสิทธิ์ผู้ใช้งาน</option>
+                      <option value="ADMIN">ADMIN ฝ่ายปกครอง</option>
+                      <option value="TEACHER">TEACHER ครูที่ปรึกษา</option>
+                    </select>
+
+                    {(userSearch || userRoleFilter !== "ALL") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setUserSearch("");
+                          setUserRoleFilter("ALL");
+                        }}
+                        className="h-10 rounded-xl text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 cursor-pointer"
+                      >
+                        ล้างตัวกรอง
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-border/50 text-[11px] text-muted-foreground font-medium">
+                  <span>ค้นหาจากชื่อครู, อีเมล หรือห้องเรียนที่ดูแล</span>
+                  <span>แสดง {filteredUsers.length} จาก {initialData.users.length} บัญชี</span>
+                </div>
+              </div>
+
               {/* Users List */}
               <div className="space-y-3.5">
-                {initialData.users.map((u) => {
+                {filteredUsers.length === 0 ? (
+                  <div className="py-16 text-center rounded-3xl border border-dashed border-border/80 bg-muted/20">
+                    <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground mx-auto mb-3">
+                      <Users className="h-7 w-7" />
+                    </div>
+                    <p className="font-bold text-sm text-foreground">ไม่พบบัญชีผู้ใช้งานตามเงื่อนไข</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ลองเปลี่ยนคำค้นหา หรือล้างตัวกรองเพื่อดูรายชื่อทั้งหมด
+                    </p>
+                  </div>
+                ) : (
+                  filteredUsers.map((u) => {
                   const isAdmin = u.role === "ADMIN";
                   const initials = getUserInitials(u.name);
 
@@ -1703,16 +2143,16 @@ export function AdminBackofficeClient({
                             )}
 
                             {isAdmin ? (
-                              <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/25">
+                              <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/25 shrink-0 whitespace-nowrap">
                                 ⚡ สิทธิ์เต็ม 100% (ทุกห้อง)
                               </span>
                             ) : u.classrooms ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs shrink-0 whitespace-nowrap">
                                 <School className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                                 <span>ดูแลเฉพาะ: {u.classrooms}</span>
                               </span>
                             ) : (
-                              <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                              <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border shrink-0 whitespace-nowrap">
                                 <span>ดูแลได้ทุกห้อง</span>
                               </span>
                             )}
@@ -1775,7 +2215,7 @@ export function AdminBackofficeClient({
                       </div>
                     </div>
                   );
-                })}
+                }))}
               </div>
             </div>
           )}
@@ -1787,16 +2227,16 @@ export function AdminBackofficeClient({
               <div className="relative overflow-hidden rounded-3xl border border-rose-500/25 bg-gradient-to-br from-rose-500/10 via-purple-500/5 to-card backdrop-blur-xl shadow-lg p-6">
                 <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-rose-500/50 to-transparent pointer-events-none" />
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <div className="h-13 w-13 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-rose-500/30 shrink-0 ring-2 ring-white/30 dark:ring-white/10">
                       <CalendarDays className="h-6 w-6" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-black text-foreground tracking-tight">
                           จัดการประวัติการเช็คชื่อรายวัน (Attendance Date Logs)
                         </h3>
-                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30 uppercase tracking-wider">
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
                           {initialData.attendanceDates.length} วันที่บันทึก 📅
                         </span>
                       </div>
@@ -1808,20 +2248,171 @@ export function AdminBackofficeClient({
                 </div>
               </div>
 
+              {/* Toolbar & Filters for Date Logs */}
+              <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                  {/* Search Input */}
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="ค้นหาด้วยรหัสนักศึกษา, ชื่อ-สกุล, ห้องเรียน หรือวันที่..."
+                      value={logSearch}
+                      onChange={(e) => setLogSearch(e.target.value)}
+                      className="pl-9 h-10 rounded-xl text-xs bg-muted/40 border-border/70"
+                    />
+                  </div>
+
+                  {/* Date Picker Filter (Thai Calendar Popover) */}
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Popover open={isLogDateOpen} onOpenChange={setIsLogDateOpen}>
+                      <PopoverTrigger className="flex h-10 items-center justify-between gap-2.5 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors cursor-pointer w-full sm:min-w-[190px]">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-primary shrink-0" />
+                          <span>
+                            {logDateFilter
+                              ? formatThaiDisplay(logDateFilter)
+                              : "เลือกวันที่ (ปฏิทินไทย)"}
+                          </span>
+                        </div>
+                        {logDateFilter && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLogDateFilter("");
+                            }}
+                            className="rounded-full p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="ล้างวันที่"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </span>
+                        )}
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        side="bottom"
+                        sideOffset={8}
+                        collisionPadding={12}
+                        className="w-auto p-2 rounded-3xl shadow-2xl border border-border/80 bg-popover z-50"
+                      >
+                        <Calendar
+                          mode="single"
+                          selected={logDateFilter ? parseISO(logDateFilter) : undefined}
+                          onSelect={(day) => {
+                            if (day) {
+                              setLogDateFilter(format(day, "yyyy-MM-dd"));
+                              setIsLogDateOpen(false);
+                            }
+                          }}
+                        />
+                        {logDateFilter && (
+                          <div className="pt-2 px-2 pb-1 border-t border-border/60 flex justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setLogDateFilter("");
+                                setIsLogDateOpen(false);
+                              }}
+                              className="text-xs h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 cursor-pointer"
+                            >
+                              ล้างวันที่เลือก
+                            </Button>
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                {/* Filters row: Classroom, Student & Teacher */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+                  {/* Filter by Classroom */}
+                  <select
+                    value={logClassroomFilter}
+                    onChange={(e) => {
+                      setLogClassroomFilter(e.target.value);
+                      setLogStudentFilter("ALL");
+                    }}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="ALL">ทุกห้องเรียน ({initialData.classrooms.length} ห้อง)</option>
+                    {initialData.classrooms.map((c) => (
+                      <option key={c} value={c}>
+                        ห้อง {c}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Filter by Student */}
+                  <select
+                    value={logStudentFilter}
+                    onChange={(e) => setLogStudentFilter(e.target.value)}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20 max-w-[220px] truncate"
+                  >
+                    <option value="ALL">
+                      นักเรียนทุกคน ({availableStudentsForLogs.length} คน)
+                    </option>
+                    {availableStudentsForLogs.map((s) => (
+                      <option key={s.id} value={s.studentId}>
+                        {s.studentId} - {s.fullName}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Filter by Teacher */}
+                  <select
+                    value={logTeacherFilter}
+                    onChange={(e) => setLogTeacherFilter(e.target.value)}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="ALL">ครูทุกคน ({availableTeachers.length} ท่าน)</option>
+                    {availableTeachers.map((t) => (
+                      <option key={t} value={t}>
+                        ครู {t}
+                      </option>
+                    ))}
+                  </select>
+
+                  {(logSearch || logDateFilter || logClassroomFilter !== "ALL" || logStudentFilter !== "ALL" || logTeacherFilter !== "ALL") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setLogSearch("");
+                        setLogDateFilter("");
+                        setLogClassroomFilter("ALL");
+                        setLogStudentFilter("ALL");
+                        setLogTeacherFilter("ALL");
+                      }}
+                      className="h-9 rounded-xl text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 cursor-pointer"
+                    >
+                      ล้างตัวกรองทั้งหมด
+                    </Button>
+                  )}
+
+                  <span className="text-[11px] text-muted-foreground ml-auto font-medium">
+                    แสดง {filteredAttendanceDates.length} จาก {initialData.attendanceDates.length} วัน
+                  </span>
+                </div>
+              </div>
+
               {/* Logs List */}
               <div className="space-y-3">
-                {initialData.attendanceDates.length === 0 ? (
+                {filteredAttendanceDates.length === 0 ? (
                   <div className="py-16 text-center rounded-3xl border border-dashed border-border/80 bg-muted/20">
                     <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground mx-auto mb-3">
                       <CalendarDays className="h-7 w-7" />
                     </div>
-                    <p className="font-bold text-sm text-foreground">ยังไม่มีประวัติการเช็คชื่อในฐานข้อมูล</p>
+                    <p className="font-bold text-sm text-foreground">ไม่พบประวัติการเช็คชื่อตามตัวกรอง</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      ระบบจะสร้างประวัติการเช็คชื่อโดยอัตโนมัติเมื่อมีการบันทึกการเข้าแถวหน้าบ้าน
+                      ลองเปลี่ยนวันที่ หรือล้างตัวกรองเพื่อดูข้อมูลทั้งหมด
                     </p>
                   </div>
                 ) : (
-                  initialData.attendanceDates.map((d) => (
+                  filteredAttendanceDates.map((d) => (
                     <div
                       key={d.dateIso}
                       className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-rose-500/[0.02] p-4.5 hover:border-rose-500/35 hover:shadow-lg hover:shadow-rose-500/5 transition-all duration-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 group"
@@ -1879,6 +2470,77 @@ export function AdminBackofficeClient({
                               </span>
                             )}
                           </div>
+
+                          {/* Extra info: Classrooms & Teachers recorded */}
+                          {((d.classrooms && d.classrooms.length > 0) || (d.teachers && d.teachers.length > 0)) && (
+                            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+                              {d.classrooms && d.classrooms.length > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/70 text-foreground font-medium border border-border/50">
+                                  <span>🏫 ห้อง:</span>
+                                  <span className="font-bold">{d.classrooms.join(", ")}</span>
+                                </span>
+                              )}
+                              {d.teachers && d.teachers.length > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/70 text-foreground font-medium border border-border/50">
+                                  <span>👨‍🏫 ครูผู้เช็ค:</span>
+                                  <span className="font-bold">{d.teachers.join(", ")}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Matching students when searching or filtering */}
+                          {(() => {
+                            const q = logSearch.trim().toLowerCase();
+                            const matches = (d.students || []).filter((st) => {
+                              if (logStudentFilter !== "ALL") {
+                                return st.studentId === logStudentFilter || st.studentCode === logStudentFilter;
+                              }
+                              if (q) {
+                                return (
+                                  st.studentCode.toLowerCase().includes(q) ||
+                                  st.fullName.toLowerCase().includes(q) ||
+                                  st.classroom.toLowerCase().includes(q)
+                                );
+                              }
+                              return false;
+                            });
+
+                            if (matches.length === 0) return null;
+
+                            return (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-border/40">
+                                <span className="text-[10px] font-bold text-muted-foreground">
+                                  🔍 นักศึกษาที่เกี่ยวข้อง ({matches.length}):
+                                </span>
+                                {matches.slice(0, 6).map((st) => (
+                                  <span
+                                    key={st.studentCode}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border",
+                                      st.status === "ABSENT"
+                                        ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                                        : st.status === "LATE"
+                                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                                        : st.status === "LEAVE"
+                                        ? "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30"
+                                        : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                                    )}
+                                  >
+                                    <span>{st.studentCode} {st.fullName}</span>
+                                    <span className="opacity-80">
+                                      [{st.status === "PRESENT" ? "มา" : st.status === "ABSENT" ? "ขาด" : st.status === "LATE" ? "สาย" : "ลา"}]
+                                    </span>
+                                  </span>
+                                ))}
+                                {matches.length > 6 && (
+                                  <span className="text-[10px] font-medium text-muted-foreground">
+                                    + อีก {matches.length - 6} คน
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
 
@@ -1900,6 +2562,412 @@ export function AdminBackofficeClient({
                 )}
               </div>
             </div>
+          )}
+
+          {/* MODULE 6: REMEDIAL & CLINIC RECORDS MANAGEMENT */}
+          {activeSection === "remedials" && (
+            <div className="space-y-4">
+              {/* Luxury Header Banner */}
+              <div className="relative overflow-hidden rounded-3xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-card backdrop-blur-xl shadow-lg p-6">
+                <div className="absolute inset-x-8 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-violet-500/50 to-transparent pointer-events-none" />
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="h-13 w-13 rounded-2xl bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0 ring-2 ring-white/30 dark:ring-white/10">
+                      <Sparkles className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-black text-foreground tracking-tight">
+                          จัดการข้อมูลการแก้แถว & คลินิกแก้แถว (Remedials)
+                        </h3>
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/30 uppercase tracking-wider shrink-0 whitespace-nowrap inline-flex items-center">
+                          {filteredRemedials.length} รายการ ✨
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        ตรวจสอบ ประวัติการเข้าคลินิกแก้แถววันพุธ-พฤหัสฯ และกิจกรรมชดเชยเวลาเรียน ซิงค์กับระบบหน้าบ้านทันที
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push("/attendance/remedial")}
+                      className="rounded-xl border-violet-500/30 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10 font-bold text-xs h-10 px-4"
+                    >
+                      <ArrowUpRight className="h-4 w-4 mr-1.5" />
+                      <span>เปิดระบบคลินิกแก้แถว</span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Overview Row (including Image 2 design!) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                {/* Stat 1: Matching Image 2 */}
+                <div className="relative overflow-hidden rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 sm:p-5 flex items-center justify-between shadow-xs">
+                  <div>
+                    <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                      แก้แถวสำเร็จแล้วทั้งหมด
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-black mt-1 text-violet-600 dark:text-violet-400">
+                      {remedials.length} ครั้ง
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                      คลินิกแก้แถววันพุธ-พฤหัสบดี
+                    </p>
+                  </div>
+                  <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-600 dark:text-violet-400 shrink-0">
+                    <Sparkles className="h-6 w-6" />
+                  </div>
+                </div>
+
+                {/* Stat 2 */}
+                <div className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-5 flex items-center justify-between shadow-xs">
+                  <div>
+                    <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                      อนุมัติสมบูรณ์ (APPROVED)
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-black mt-1 text-emerald-600 dark:text-emerald-400">
+                      {remedials.filter((r) => r.status === "APPROVED").length} รายการ
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                      ชดเชยเวลาเรียนเรียบร้อย
+                    </p>
+                  </div>
+                  <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                </div>
+
+                {/* Stat 3 */}
+                <div className="relative overflow-hidden rounded-2xl border border-blue-500/30 bg-blue-500/5 p-4 sm:p-5 flex items-center justify-between shadow-xs">
+                  <div>
+                    <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                      เข้าคลินิกแก้แถว
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-black mt-1 text-blue-600 dark:text-blue-400">
+                      {remedials.filter((r) => r.type === "CLINIC_MAKEUP").length} ครั้ง
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                      รอบชดเชยวันพุธ-พฤหัสบดี
+                    </p>
+                  </div>
+                  <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-600 dark:text-blue-400 shrink-0">
+                    <CalendarDays className="h-6 w-6" />
+                  </div>
+                </div>
+
+                {/* Stat 4 */}
+                <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-5 flex items-center justify-between shadow-xs">
+                  <div>
+                    <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                      กิจกรรมชดเชยอื่น ๆ
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-black mt-1 text-amber-600 dark:text-amber-400">
+                      {remedials.filter((r) => r.type === "SPECIAL_ACTIVITY").length} รายการ
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                      บำเพ็ญประโยชน์ / กิจกรรม
+                    </p>
+                  </div>
+                  <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
+                    <Award className="h-6 w-6" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Toolbar & Filters */}
+              <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-xs space-y-3">
+                {/* Row 1: Search & Date picker */}
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                  {/* Search Input */}
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="ค้นหาด้วยรหัสนักศึกษา, ชื่อ-สกุล, ห้องเรียน หรือวันที่..."
+                      value={remedialSearch}
+                      onChange={(e) => setRemedialSearch(e.target.value)}
+                      className="pl-9 h-10 rounded-xl text-xs bg-muted/40 border-border/70"
+                    />
+                  </div>
+
+                  {/* Date Filter Picker (Thai Calendar Popover) */}
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Popover open={isRemedialDateOpen} onOpenChange={setIsRemedialDateOpen}>
+                      <PopoverTrigger className="flex h-10 items-center justify-between gap-2.5 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors cursor-pointer w-full sm:min-w-[190px]">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                          <span>
+                            {remedialDateFilter
+                              ? formatThaiDisplay(remedialDateFilter)
+                              : "เลือกวันที่ (ปฏิทินไทย)"}
+                          </span>
+                        </div>
+                        {remedialDateFilter && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRemedialDateFilter("");
+                            }}
+                            className="rounded-full p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="ล้างวันที่"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </span>
+                        )}
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        side="bottom"
+                        sideOffset={8}
+                        collisionPadding={12}
+                        className="w-auto p-2 rounded-3xl shadow-2xl border border-border/80 bg-popover z-50"
+                      >
+                        <Calendar
+                          mode="single"
+                          selected={remedialDateFilter ? parseISO(remedialDateFilter) : undefined}
+                          onSelect={(day) => {
+                            if (day) {
+                              setRemedialDateFilter(format(day, "yyyy-MM-dd"));
+                              setIsRemedialDateOpen(false);
+                            }
+                          }}
+                        />
+                        {remedialDateFilter && (
+                          <div className="pt-2 px-2 pb-1 border-t border-border/60 flex justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setRemedialDateFilter("");
+                                setIsRemedialDateOpen(false);
+                              }}
+                              className="text-xs h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 cursor-pointer"
+                            >
+                              ล้างวันที่เลือก
+                            </Button>
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                {/* Row 2: Select Classroom, Student, Teacher, Type & Clear */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+                  {/* 1. เลือกห้องเรียน */}
+                  <select
+                    value={remedialClassroomFilter}
+                    onChange={(e) => {
+                      setRemedialClassroomFilter(e.target.value);
+                      setRemedialStudentFilter("ALL");
+                    }}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="ALL">ทุกห้องเรียน ({initialData.classrooms.length} ห้อง)</option>
+                    {initialData.classrooms.map((c) => (
+                      <option key={c} value={c}>
+                        ห้อง {c}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* 2. เลือกนักเรียน */}
+                  <select
+                    value={remedialStudentFilter}
+                    onChange={(e) => setRemedialStudentFilter(e.target.value)}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20 max-w-[220px] truncate"
+                  >
+                    <option value="ALL">
+                      นักเรียนทุกคน ({availableStudentsForRemedials.length} คน)
+                    </option>
+                    {availableStudentsForRemedials.map((s) => (
+                      <option key={s.id} value={s.studentId}>
+                        {s.studentId} - {s.fullName}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* 3. เลือกครู (ผู้อนุมัติ) */}
+                  <select
+                    value={remedialTeacherFilter}
+                    onChange={(e) => setRemedialTeacherFilter(e.target.value)}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="ALL">ครูทุกคน ({availableTeachers.length} ท่าน)</option>
+                    {availableTeachers.map((t) => (
+                      <option key={t} value={t}>
+                        ครู {t}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* 4. เลือกประเภทการแก้ */}
+                  <select
+                    value={remedialTypeFilter}
+                    onChange={(e) => setRemedialTypeFilter(e.target.value as "ALL" | "CLINIC_MAKEUP" | "SPECIAL_ACTIVITY")}
+                    className="h-9 rounded-xl border border-border/70 bg-card px-3 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="ALL">ทุกประเภทการแก้</option>
+                    <option value="CLINIC_MAKEUP">คลินิกแก้แถว</option>
+                    <option value="SPECIAL_ACTIVITY">กิจกรรมพิเศษ</option>
+                  </select>
+
+                  {(remedialSearch ||
+                    remedialDateFilter ||
+                    remedialClassroomFilter !== "ALL" ||
+                    remedialStudentFilter !== "ALL" ||
+                    remedialTeacherFilter !== "ALL" ||
+                    remedialTypeFilter !== "ALL") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRemedialSearch("");
+                        setRemedialDateFilter("");
+                        setRemedialClassroomFilter("ALL");
+                        setRemedialStudentFilter("ALL");
+                        setRemedialTeacherFilter("ALL");
+                        setRemedialTypeFilter("ALL");
+                      }}
+                      className="h-9 rounded-xl text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 cursor-pointer"
+                    >
+                      ล้างตัวกรองทั้งหมด
+                    </Button>
+                  )}
+
+                  <span className="text-[11px] text-muted-foreground ml-auto font-medium">
+                    แสดง {filteredRemedials.length} จาก {remedials.length} รายการ
+                  </span>
+                </div>
+              </div>
+
+              {/* Remedials List Section - Matching Image 1! */}
+              <div className="space-y-3">
+                {filteredRemedials.length === 0 ? (
+                  <div className="py-16 text-center rounded-3xl border border-dashed border-border/80 bg-muted/20">
+                    <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground mx-auto mb-3">
+                      <Sparkles className="h-7 w-7" />
+                    </div>
+                    <p className="font-bold text-sm text-foreground">ไม่พบรายการแก้แถว</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ยังไม่มีรายการแก้แถวตามเงื่อนไขที่เลือก หรือยังไม่มีนักเรียนบันทึกแก้แถว
+                    </p>
+                  </div>
+                ) : (
+                  filteredRemedials.map((rem) => {
+                    const formattedCreated = format(new Date(rem.createdAtIso), "d ต.ค. yyyy", { locale: th });
+                    const formattedTarget = format(new Date(rem.targetDateIso), "d ต.ค. yyyy", { locale: th });
+                    const stu = initialData.students.find((s) => s.studentId === rem.studentCode || s.id === rem.studentId);
+                    const remainingDebt = stu ? Math.max(0, stu.absentCount - stu.remedialCount) : 0;
+
+                    return (
+                      <div
+                        key={rem.id}
+                        className="relative overflow-hidden rounded-2xl border border-border/80 bg-card p-4 sm:p-5 hover:border-violet-500/40 hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 group"
+                      >
+                        {/* Left: Icon, Student Code, Copy, Name, Classroom, Type badge */}
+                        <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 shrink-0 group-hover:scale-105 transition-transform">
+                            <CalendarDays className="h-5 w-5" />
+                          </div>
+
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs sm:text-sm font-bold text-foreground tracking-tight">
+                                {rem.studentCode}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCode(rem.studentCode)}
+                                className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded-md hover:bg-muted cursor-pointer"
+                                title="คัดลอกรหัส"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="text-xs sm:text-sm font-bold text-foreground">
+                                {rem.studentName}
+                              </span>
+                              <Badge variant="secondary" className="text-[10px] font-bold px-2 py-0.2">
+                                {rem.classroom}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-bold border-violet-500/30 text-violet-700 dark:text-violet-300 bg-violet-500/10"
+                              >
+                                {rem.type === "CLINIC_MAKEUP" ? "มาแก้แถว" : "กิจกรรมแก้แถว"}
+                              </Badge>
+                            </div>
+
+                            <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5">
+                              <span>มาแก้แถวเมื่อ {formattedCreated}</span>
+                              <span>•</span>
+                              <span>ชดเชยวันขาด {formattedTarget}</span>
+                              {rem.activityTitle && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-foreground/80 font-medium">
+                                    {rem.activityTitle}
+                                  </span>
+                                </>
+                              )}
+                              {rem.approvedByName && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-muted-foreground/80">
+                                    ผู้อนุมัติ: {rem.approvedByName}
+                                  </span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Right: Status badge & Admin Delete button */}
+                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0 self-end sm:self-center">
+                          {remainingDebt > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              <span>ค้างแก้สะสมข้ามสัปดาห์ ({remainingDebt} ครั้ง)</span>
+                            </span>
+                          )}
+
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>แก้แถวแล้ว</span>
+                          </span>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={isPending}
+                            onClick={() => handleDeleteRemedial(rem)}
+                            className="h-9 w-9 p-0 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="ลบรายการแก้แถวนี้"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* MODULE 7: ACADEMIC CALENDAR & TERMS MANAGEMENT */}
+          {activeSection === "schedule" && (
+            <AcademicCalendarTab
+              initialConfig={calendarConfig}
+              onConfigChange={(newCfg) => setCalendarConfig(newCfg)}
+            />
           )}
         </section>
       </div>
@@ -2400,11 +3468,13 @@ export function AdminBackofficeClient({
           ============================================================ */}
       <Dialog
         open={deleteDialog.isOpen}
-        onOpenChange={(open) =>
-          setDeleteDialog((prev) => ({ ...prev, isOpen: open }))
-        }
+        onOpenChange={(open) => {
+          if (!isDeleting) {
+            setDeleteDialog((prev) => ({ ...prev, isOpen: open }));
+          }
+        }}
       >
-        <DialogContent className="sm:max-w-md p-0 overflow-hidden rounded-3xl border border-rose-500/30 bg-card shadow-2xl shadow-rose-500/15">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md p-0 gap-0 overflow-hidden rounded-3xl border border-rose-500/30 bg-card shadow-2xl shadow-rose-500/15">
           {/* Top Rose Glowing Ambient Banner */}
           <div className="relative bg-gradient-to-br from-rose-600/15 via-red-500/10 to-amber-500/5 px-6 pt-7 pb-5 text-center border-b border-rose-500/20">
             {/* Glossy sheen */}
@@ -2421,67 +3491,72 @@ export function AdminBackofficeClient({
             <DialogTitle className="text-lg font-black text-foreground tracking-tight">
               {deleteDialog.title}
             </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground mt-1 px-3">
+            <DialogDescription className="text-xs text-muted-foreground mt-1.5 px-3 leading-relaxed">
               {deleteDialog.description}
             </DialogDescription>
           </div>
 
           {/* Target Item Highlight Card */}
-          <div className="p-6 space-y-4">
-            <div className="rounded-2xl border border-rose-500/25 bg-rose-500/5 dark:bg-rose-950/20 p-3.5 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-black text-rose-950 dark:text-rose-100 truncate">
-                  {deleteDialog.itemName}
-                </p>
+          <div className="p-5 sm:p-6 space-y-4">
+            <div className="rounded-2xl border border-rose-500/25 bg-rose-500/5 dark:bg-rose-950/20 p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2.5">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-sm font-black text-rose-950 dark:text-rose-100 break-words leading-snug">
+                    {deleteDialog.itemName}
+                  </p>
+                  {deleteDialog.itemSubtitle && (
+                    <p className="text-xs font-semibold text-rose-800 dark:text-rose-200 break-words leading-relaxed">
+                      {deleteDialog.itemSubtitle}
+                    </p>
+                  )}
+                </div>
                 {deleteDialog.itemBadge && (
-                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300">
+                  <span className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300">
                     {deleteDialog.itemBadge}
                   </span>
                 )}
               </div>
               {deleteDialog.itemDetail && (
-                <p className="text-xs text-rose-700/80 dark:text-rose-300/80">
+                <p className="text-xs text-rose-700/80 dark:text-rose-300/80 leading-relaxed pt-0.5 border-t border-rose-500/15">
                   {deleteDialog.itemDetail}
                 </p>
               )}
             </div>
 
             {/* Warning Note */}
-            <div className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5">
+            <div className="flex items-center gap-2.5 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5 leading-tight">
               <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <span>การกระทำนี้ส่งผลต่อฐานข้อมูลทันที และไม่สามารถกู้คืนได้</span>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2">
+            {/* Action Buttons: Responsive 2-column grid preventing overflow and cut-off */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <Button
                 type="button"
                 variant="outline"
-                disabled={isPending}
+                disabled={isDeleting}
                 onClick={() =>
                   setDeleteDialog((prev) => ({ ...prev, isOpen: false }))
                 }
-                className="rounded-xl px-4 font-semibold cursor-pointer"
+                className="w-full h-11 rounded-xl font-semibold border-border hover:bg-muted cursor-pointer transition-colors text-xs sm:text-sm"
               >
                 ยกเลิก (Cancel)
               </Button>
               <Button
                 type="button"
-                disabled={isPending}
-                onClick={() => {
-                  deleteDialog.onConfirm();
-                  setDeleteDialog((prev) => ({ ...prev, isOpen: false }));
-                }}
-                className="rounded-xl px-5 font-bold shadow-lg shadow-rose-600/25 bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white cursor-pointer transition-all active:scale-95"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="w-full h-11 rounded-xl font-bold shadow-lg shadow-rose-600/25 bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white cursor-pointer transition-all active:scale-95 text-xs sm:text-sm"
               >
-                {isPending ? (
+                {isDeleting ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    กำลังลบ...
+                    <Loader2 className="h-4 w-4 animate-spin mr-1.5 shrink-0" />
+                    <span>กำลังลบ...</span>
                   </>
                 ) : (
                   <>
-                    <Trash2 className="h-4 w-4 mr-1.5" />
-                    ยืนยันการลบ (Delete)
+                    <Trash2 className="h-4 w-4 mr-1.5 shrink-0" />
+                    <span>ยืนยันการลบ</span>
                   </>
                 )}
               </Button>

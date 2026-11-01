@@ -60,6 +60,7 @@ export interface RemedialLogItem {
   status: RemedialStatus;
   approvedByName: string | null;
   createdAtIso: string;
+  type?: "CLINIC_MAKEUP" | "SPECIAL_ACTIVITY";
 }
 
 export interface StudentDeficitReportItem {
@@ -363,8 +364,17 @@ export async function getDeficitReportAction(options?: {
       studentRemedialLogs.push(logItem);
     }
 
+    const recordedTargetDates = new Set(
+      s.remedialRecords.map((rem) => formatDateISO(rem.targetDate))
+    );
+
     for (const abs of evalResult.absences) {
-      if (abs.isRemedied && abs.remedyType === "MAKEUP_WED_THU" && abs.remediedOnDateIso) {
+      if (
+        abs.isRemedied &&
+        abs.remedyType === "MAKEUP_WED_THU" &&
+        abs.remediedOnDateIso &&
+        !recordedTargetDates.has(abs.dateIso)
+      ) {
         const syntheticLog: RemedialLogItem = {
           id: `makeup-${s.id}-${abs.dateIso}`,
           studentId: s.id,
@@ -876,8 +886,13 @@ export async function getStudentClinicMakeupInfoAction(
           rec?.status === AttendanceStatus.LATE;
 
         const usage = evalResult.makeupUsageMap.get(cDateIso);
-        const remediesDateIso = usage?.targetAbsenceDateIso ?? null;
-        const isRemedyingTarget = remediesDateIso === activeTarget.dateIso;
+        const existingRemForClinic = student.remedialRecords.find(
+          (rem) => rem.activityTitle?.includes(`(${cDateIso})`)
+        );
+        const remediesDateIso =
+          usage?.targetAbsenceDateIso ??
+          (existingRemForClinic ? formatDateISO(existingRemForClinic.targetDate) : null);
+        const isRemedyingTarget = Boolean(remediesDateIso && remediesDateIso === activeTarget.dateIso);
 
         clinicDates.push({
           dateIso: cDateIso,
@@ -968,6 +983,23 @@ export async function submitClinicMakeupAction(input: {
       return {
         success: false,
         message: "วันคลินิกแก้แถวต้องเป็นวันพุธ หรือวันพฤหัสบดีเท่านั้น",
+      };
+    }
+
+    // ตรวจสอบว่าวันคลินิกนี้ถูกใช้ชดเชยวันขาดอื่นไปแล้วหรือไม่ (ป้องกันการบันทึกทับซ้อน)
+    const existingRemedialOther = await prisma.remedialRecord.findFirst({
+      where: {
+        studentId: student.id,
+        targetDate: { not: targetDateUtc },
+        activityTitle: { contains: `(${input.clinicMakeupDate})` },
+      },
+    });
+
+    if (existingRemedialOther) {
+      const otherDateStr = formatDateISO(existingRemedialOther.targetDate);
+      return {
+        success: false,
+        message: `วันคลินิก ${input.clinicMakeupDate} ถูกใช้ชดเชยวันขาดวันที่ ${otherDateStr} แล้ว ไม่สามารถใช้ซ้ำได้เพื่อป้องกันข้อมูลทับซ้อน`,
       };
     }
 

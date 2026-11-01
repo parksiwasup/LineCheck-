@@ -9,6 +9,11 @@ import {
   addUtcDays,
   parseIsoToUtc,
 } from "@/lib/attendance-rules";
+import {
+  getTermForDate,
+  getScheduleSummaryLabels,
+} from "@/types/academic-calendar";
+import { getAcademicCalendarConfig } from "@/lib/academic-calendar";
 import { AttendanceStatus, RemedialStatus, StudentStatus } from "@prisma/client";
 
 export type CalendarDayVisualStatus =
@@ -317,10 +322,10 @@ export async function getStudentMonthlyCalendarAction(
               statusNote = "ค้างสะสมข้ามรอบ!";
             } else {
               visualStatus = "ABSENT_MAKEUP_WINDOW";
-              statusNote =
-                dayOfWeek === 5
-                  ? "นัดแก้ พ.-พฤ. หน้า"
-                  : "นัดแก้ พ.-พฤ. นี้";
+              const calCfg = getAcademicCalendarConfig();
+              const term = getTermForDate(cellDate, calCfg);
+              const sched = getScheduleSummaryLabels(term);
+              statusNote = `นัดแก้รอบคลินิก (${sched.makeupDaysShort})`;
             }
           }
         }

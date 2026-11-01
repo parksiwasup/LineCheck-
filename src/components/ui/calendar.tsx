@@ -17,15 +17,24 @@ import {
 import { th } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  AcademicCalendarConfig,
+  getSchoolDayKindFromConfig,
+  getTermForDate,
+  getScheduleSummaryLabels,
+  getWeekdayHeadersForDate,
+} from "@/types/academic-calendar";
 
 export interface CalendarProps {
   mode?: "single";
   selected?: Date;
   onSelect?: (date: Date | undefined) => void;
   className?: string;
+  variant?: "default" | "term";
+  config?: AcademicCalendarConfig | null;
 }
 
-const WEEKDAY_HEADERS = [
+const DEFAULT_WEEKDAY_HEADERS = [
   { label: "จ.", sub: "มาแถว", kind: "REQUIRED" as const },
   { label: "อ.", sub: "มาแถว", kind: "REQUIRED" as const },
   { label: "พ.", sub: "หยุด/แก้", kind: "MAKEUP_HOLIDAY" as const },
@@ -35,6 +44,34 @@ const WEEKDAY_HEADERS = [
   { label: "อา.", sub: "วันหยุด", kind: "WEEKEND" as const },
 ];
 
+const SIMPLE_WEEKDAY_HEADERS = [
+  { label: "จ.", isWeekend: false },
+  { label: "อ.", isWeekend: false },
+  { label: "พ.", isWeekend: false },
+  { label: "พฤ.", isWeekend: false },
+  { label: "ศ.", isWeekend: false },
+  { label: "ส.", isWeekend: true },
+  { label: "อา.", isWeekend: true },
+];
+
+const THAI_MONTHS = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+];
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from({ length: 15 }, (_, i) => CURRENT_YEAR - 7 + i);
+
 function getLocalDayKind(date: Date): "REQUIRED" | "MAKEUP_HOLIDAY" | "WEEKEND" {
   const dow = date.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   if (dow === 0 || dow === 6) return "WEEKEND";
@@ -42,7 +79,14 @@ function getLocalDayKind(date: Date): "REQUIRED" | "MAKEUP_HOLIDAY" | "WEEKEND" 
   return "REQUIRED";
 }
 
-function Calendar({ selected, onSelect, className }: CalendarProps) {
+function Calendar({
+  selected,
+  onSelect,
+  className,
+  variant = "default",
+  config,
+}: CalendarProps) {
+  const isTermVariant = variant === "term";
   const [viewMonth, setViewMonth] = React.useState<Date>(
     () => selected ?? new Date()
   );
@@ -59,11 +103,151 @@ function Calendar({ selected, onSelect, className }: CalendarProps) {
     return eachDayOfInterval({ start, end });
   }, [viewMonth]);
 
+  const currentTerm = React.useMemo(() => {
+    return getTermForDate(viewMonth, config);
+  }, [viewMonth, config]);
+
+  const weekdayHeaders = React.useMemo(() => {
+    return getWeekdayHeadersForDate(viewMonth, config);
+  }, [viewMonth, config]);
+
+  const scheduleLegend = React.useMemo(() => {
+    return getScheduleSummaryLabels(currentTerm);
+  }, [currentTerm]);
+
   const buddhistYear = viewMonth.getFullYear() + 543;
   const monthLabel = format(viewMonth, "MMMM", { locale: th });
 
+  // =========================================================================
+  // VARIANT: TERM (ปฏิทินปกติแบบไทย สำหรับเลือกวันที่ทั่วไป ไม่ผูกกับคำว่า แก้/คลินิก)
+  // =========================================================================
+  if (isTermVariant) {
+    return (
+      <div className={cn("w-[310px] sm:w-[330px] p-2.5 select-none", className)}>
+        {/* Month & Year Select Header */}
+        <div className="flex items-center justify-between gap-1 pb-2.5 mb-2 border-b border-border/60">
+          <div className="flex items-center gap-1">
+            <select
+              value={viewMonth.getMonth()}
+              onChange={(e) => {
+                const newMonth = Number(e.target.value);
+                setViewMonth(new Date(viewMonth.getFullYear(), newMonth, 1));
+              }}
+              className="h-8 rounded-lg border border-border/80 bg-card px-1.5 text-xs font-black text-foreground hover:bg-muted/50 cursor-pointer shadow-2xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              {THAI_MONTHS.map((m, idx) => (
+                <option key={idx} value={idx}>
+                  {m}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={viewMonth.getFullYear()}
+              onChange={(e) => {
+                const newYear = Number(e.target.value);
+                setViewMonth(new Date(newYear, viewMonth.getMonth(), 1));
+              }}
+              className="h-8 rounded-lg border border-border/80 bg-card px-1.5 text-xs font-black text-foreground hover:bg-muted/50 cursor-pointer shadow-2xs focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+            >
+              {YEAR_OPTIONS.map((y) => (
+                <option key={y} value={y}>
+                  {y + 543}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const now = new Date();
+                setViewMonth(now);
+                onSelect?.(now);
+              }}
+              className="rounded-lg border border-border bg-muted/50 hover:bg-accent px-2 py-1 text-[11px] font-bold text-foreground transition-colors cursor-pointer"
+            >
+              วันนี้
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMonth((m) => subMonths(m, 1))}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card hover:bg-accent text-foreground transition-colors cursor-pointer"
+              aria-label="เดือนก่อนหน้า"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMonth((m) => addMonths(m, 1))}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card hover:bg-accent text-foreground transition-colors cursor-pointer"
+              aria-label="เดือนถัดไป"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Weekday Column Headers (จ. อ. พ. พฤ. ศ. ส. อา.) */}
+        <div className="grid grid-cols-7 gap-1 mb-1 text-center font-bold text-xs">
+          {SIMPLE_WEEKDAY_HEADERS.map((wh) => (
+            <div
+              key={wh.label}
+              className={cn(
+                "py-1 rounded-md text-[11px]",
+                wh.isWeekend
+                  ? "text-rose-500 dark:text-rose-400 font-black"
+                  : "text-muted-foreground font-bold"
+              )}
+            >
+              {wh.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Days Grid (สะอาดตา นอกนั้นเป็นสีขาว วันหยุดเป็นสีแดง) */}
+        <div className="grid grid-cols-7 gap-1">
+          {days.map((day) => {
+            const inMonth = isSameMonth(day, viewMonth);
+            const isSelected = selected ? isSameDay(day, selected) : false;
+            const today = isToday(day);
+            const dow = day.getDay();
+            const isWeekend = dow === 0 || dow === 6;
+
+            return (
+              <button
+                key={day.toISOString()}
+                type="button"
+                onClick={() => onSelect?.(day)}
+                className={cn(
+                  "h-9 w-9 mx-auto flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer relative",
+                  isSelected
+                    ? "bg-teal-600 text-white shadow-sm font-black ring-2 ring-teal-500/35 hover:bg-teal-600"
+                    : isWeekend
+                    ? "text-rose-500 dark:text-rose-400 bg-rose-500/[0.06] hover:bg-rose-500/15 border border-rose-500/20"
+                    : "text-foreground bg-white dark:bg-card hover:bg-slate-100 dark:hover:bg-muted border border-border/80 shadow-2xs",
+                  !inMonth && "opacity-25 pointer-events-none",
+                  today && !isSelected && "ring-2 ring-teal-500 font-black"
+                )}
+              >
+                {day.getDate()}
+                {today && !isSelected && (
+                  <span className="absolute bottom-1 h-1 w-1 rounded-full bg-teal-500" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // VARIANT: DEFAULT (สำหรับระบบเช็คชื่อ/คลินิกแก้แถวเดิม)
+  // =========================================================================
   return (
-    <div className={cn("w-[320px] sm:w-[350px] p-2.5 select-none", className)}>
+    <div className={cn("w-full max-w-[340px] sm:w-[350px] p-2.5 select-none", className)}>
       {/* Month Header */}
       <div className="flex items-center justify-between gap-2 pb-3 mb-2 border-b border-border/60">
         <div>
@@ -108,7 +292,7 @@ function Calendar({ selected, onSelect, className }: CalendarProps) {
 
       {/* Weekday Column Headers */}
       <div className="grid grid-cols-7 gap-1 mb-1.5">
-        {WEEKDAY_HEADERS.map((wh) => (
+        {weekdayHeaders.map((wh) => (
           <div
             key={wh.label}
             className={cn(
@@ -134,7 +318,7 @@ function Calendar({ selected, onSelect, className }: CalendarProps) {
           const inMonth = isSameMonth(day, viewMonth);
           const isSelected = selected ? isSameDay(day, selected) : false;
           const today = isToday(day);
-          const kind = getLocalDayKind(day);
+          const kind = getSchoolDayKindFromConfig(day, config);
 
           const baseStyle =
             kind === "REQUIRED"
@@ -204,15 +388,15 @@ function Calendar({ selected, onSelect, className }: CalendarProps) {
       <div className="mt-3 pt-2.5 border-t border-border/60 grid grid-cols-3 gap-1.5 text-[10px]">
         <div className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 px-2 py-1 text-emerald-800 dark:text-emerald-300 font-semibold">
           <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
-          <span className="truncate">วันมา (จ.อ.ศ.)</span>
+          <span className="truncate">{scheduleLegend.requiredText}</span>
         </div>
         <div className="flex items-center gap-1.5 rounded-lg bg-violet-500/10 border border-violet-500/25 px-2 py-1 text-violet-800 dark:text-violet-300 font-semibold">
           <span className="h-2 w-2 rounded-full bg-violet-500 shrink-0" />
-          <span className="truncate">หยุด/แก้ (พ.พฤ.)</span>
+          <span className="truncate">{scheduleLegend.makeupText}</span>
         </div>
         <div className="flex items-center gap-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 px-2 py-1 text-rose-700 dark:text-rose-300 font-semibold">
           <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
-          <span className="truncate">เสาร์-อาทิตย์</span>
+          <span className="truncate">{scheduleLegend.weekendText}</span>
         </div>
       </div>
     </div>

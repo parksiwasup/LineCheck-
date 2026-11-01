@@ -1,0 +1,43 @@
+{
+  "activeTermId": "term-2-2569",
+  "terms": [
+    {
+      "id": "term-1-2569",
+      "name": "ภาคเรียนที่ 1/2569",
+      "academicYear": "2569",
+      "startDateIso": "2026-05-01",
+      "endDateIso": "2026-09-30",
+      "isActive": false,
+      "weeklyDays": {
+        "0": "WEEKEND",
+        "1": "REQUIRED",
+        "2": "REQUIRED",
+        "3": "MAKEUP_HOLIDAY",
+        "4": "MAKEUP_HOLIDAY",
+        "5": "REQUIRED",
+        "6": "WEEKEND"
+      },
+      "specialDates": [],
+      "note": "ตารางมาตรฐาน: มาแถว 3 วัน (จันทร์, อังคาร, ศุกร์) และวันหยุด/คลินิกแก้แถว 2 วัน (พุธ, พฤหัสบดี)"
+    },
+    {
+      "id": "term-2-2569",
+      "name": "ภาคเรียนที่ 2/2569",
+      "academicYear": "2569",
+      "startDateIso": "2026-10-01",
+      "endDateIso": "2027-02-26",
+      "isActive": true,
+      "weeklyDays": {
+        "0": "WEEKEND",
+        "1": "MAKEUP_HOLIDAY",
+        "2": "REQUIRED",
+        "3": "MAKEUP_HOLIDAY",
+        "4": "REQUIRED",
+        "5": "REQUIRED",
+        "6": "WEEKEND"
+      },
+      "specialDates": [],
+      "note": "ภาคเรียนที่ 2/2569"
+    }
+  ]
+}
