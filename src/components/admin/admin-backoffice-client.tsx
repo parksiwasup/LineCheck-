@@ -2152,8 +2152,9 @@ export function AdminBackofficeClient({
                                 <span>ดูแลเฉพาะ: {u.classrooms}</span>
                               </span>
                             ) : (
-                              <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border shrink-0 whitespace-nowrap">
-                                <span>ดูแลได้ทุกห้อง</span>
+                              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 shrink-0 whitespace-nowrap">
+                                <AlertTriangle className="h-3 w-3 text-amber-500" />
+                                <span>ยังไม่ได้ระบุห้อง (ดูแลได้ทุกห้อง)</span>
                               </span>
                             )}
                           </div>

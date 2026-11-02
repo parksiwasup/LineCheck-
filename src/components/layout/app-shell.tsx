@@ -146,11 +146,14 @@ export function AppShell({ children, session, activeTermName }: AppShellProps) {
     if (pathname.startsWith("/login")) {
       return { pageTitle: "เข้าสู่ระบบ (Sign In)", mobileTitle: "เข้าสู่ระบบ" };
     }
+    if (pathname.startsWith("/register")) {
+      return { pageTitle: "สมัครสมาชิกใหม่ (Register)", mobileTitle: "สมัครสมาชิก" };
+    }
     return { pageTitle: "LineCheck+", mobileTitle: "LineCheck+" };
   }, [pathname]);
 
   const { theme, setTheme } = useTheme();
-  const isLoginPage = pathname?.startsWith("/login");
+  const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/register");
   const isPortalPage = pathname?.startsWith("/portal");
 
   // 1. Dedicated Student Portal Layout (Only for students and parents)
@@ -290,8 +293,8 @@ export function AppShell({ children, session, activeTermName }: AppShellProps) {
     );
   }
 
-  // 2. Standalone Login Page Layout
-  if (isLoginPage) {
+  // 2. Standalone Auth Page Layout (Login & Register)
+  if (isAuthPage) {
     return (
       <div className="min-h-dvh flex flex-col bg-background relative selection:bg-primary/20 selection:text-primary">
         {/* Top Floating Controls (Theme & Palette) */}

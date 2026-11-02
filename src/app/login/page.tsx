@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { loginWithCredentialsAction, getQuickLoginUsersAction, type QuickLoginUser } from "@/actions/auth-actions";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { cn } from "@/lib/utils";
 
 function getInitials(name: string, role: string): string {
@@ -40,10 +41,13 @@ function getInitials(name: string, role: string): string {
   return cleaned.slice(0, 2) || (role === "ADMIN" ? "ปก" : "คร");
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const registered = searchParams.get("registered");
+  const emailParam = searchParams.get("email");
+  const errorParam = searchParams.get("error");
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("password123");
@@ -51,6 +55,39 @@ export default function LoginPage() {
   const [copiedPass, setCopiedPass] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [isPending, startTransition] = React.useTransition();
+
+  React.useEffect(() => {
+    if (errorParam === "Configuration") {
+      // ตรวจสอบว่าในเซิร์ฟเวอร์มี Google Config หรือไม่ หากมีแล้วไม่ต้องแสดงเตือนค้าง
+      fetch("/api/auth/providers")
+        .then((r) => r.json())
+        .then((p) => {
+          if (!p?.google) {
+            setErrorMsg("กรุณาปิดและเปิดเซิร์ฟเวอร์ dev.bat ใหม่อีกครั้ง เพื่อให้ระบบโหลดค่า Google Client ID");
+          }
+        })
+        .catch(() => {});
+    } else if (errorParam === "AccessDenied") {
+      setErrorMsg(
+        "Google ปฏิเสธการเข้าถึง: กรุณาตรวจสอบว่าได้เพิ่มอีเมล Gmail นี้ในเมนู Audience -> Test users (หรือกด Publish App) บน Google Cloud Console แล้ว"
+      );
+    } else if (errorParam === "OAuthCallbackError") {
+      setErrorMsg(
+        "การเชื่อมต่อกลับจาก Google ขัดข้อง: กรุณาเปิดเข้าใช้งานผ่าน http://localhost:3088 เท่านั้น (ไม่ใช้เลข IP)"
+      );
+    } else if (errorParam === "CredentialsSignin") {
+      setErrorMsg("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+    } else if (errorParam) {
+      setErrorMsg(`การเข้าสู่ระบบขัดข้อง (${errorParam}) กรุณาลองใหม่อีกครั้ง`);
+    }
+  }, [errorParam]);
+
+  React.useEffect(() => {
+    if (emailParam) {
+      setEmail(emailParam);
+      setPassword(""); // เคลียร์รหัสผ่านตัวอย่าง เพื่อให้ผู้ใช้กรอกรหัสผ่านที่สมัครไว้
+    }
+  }, [emailParam]);
 
   const [quickUsers, setQuickUsers] = React.useState<QuickLoginUser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = React.useState(true);
@@ -129,8 +166,12 @@ export default function LoginPage() {
 
   const handleLogin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!email) {
+    if (!email.trim()) {
       setErrorMsg("กรุณากรอกอีเมล");
+      return;
+    }
+    if (!password) {
+      setErrorMsg("กรุณากรอกรหัสผ่าน");
       return;
     }
 
@@ -138,7 +179,7 @@ export default function LoginPage() {
     startTransition(async () => {
       try {
         const res = await loginWithCredentialsAction({
-          email,
+          email: email.trim().toLowerCase(),
           password,
           redirectTo: callbackUrl,
         });
@@ -146,17 +187,16 @@ export default function LoginPage() {
         if (!res.success) {
           setErrorMsg(res.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
         } else {
-          router.push(callbackUrl);
-          router.refresh();
+          window.location.assign(callbackUrl);
         }
       } catch {
-        router.push(callbackUrl);
-        router.refresh();
+        setErrorMsg("เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง");
       }
     });
   };
 
   const handleQuickLogin = (targetEmail: string) => {
+    setSelectedQuickEmail(targetEmail);
     setEmail(targetEmail);
     setPassword("password123");
     setErrorMsg(null);
@@ -164,20 +204,20 @@ export default function LoginPage() {
     startTransition(async () => {
       try {
         const res = await loginWithCredentialsAction({
-          email: targetEmail,
+          email: targetEmail.trim().toLowerCase(),
           password: "password123",
           redirectTo: callbackUrl,
         });
 
         if (!res.success) {
+          setSelectedQuickEmail(null);
           setErrorMsg(res.message || "เข้าสู่ระบบไม่สำเร็จ");
         } else {
-          router.push(callbackUrl);
-          router.refresh();
+          window.location.assign(callbackUrl);
         }
       } catch {
-        router.push(callbackUrl);
-        router.refresh();
+        setSelectedQuickEmail(null);
+        setErrorMsg("เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง");
       }
     });
   };
@@ -267,6 +307,13 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {registered === "1" && (
+            <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-400 animate-in fade-in slide-in-from-top-1">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+              <span>ลงทะเบียนสำเร็จเรียบร้อย! กรุณากรอกรหัสผ่านเพื่อเข้าสู่ระบบ</span>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400 animate-in fade-in slide-in-from-top-1">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -386,6 +433,37 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+
+          {/* Divider */}
+          <div className="relative my-2 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border/80" />
+            </div>
+            <span className="relative bg-card px-2.5 text-[11px] font-semibold text-muted-foreground">
+              หรือเข้าสู่ระบบด้วย
+            </span>
+          </div>
+
+          {/* Google Sign-in Button */}
+          <GoogleSignInButton
+            label="เข้าสู่ระบบด้วย Google"
+            callbackUrl={callbackUrl}
+            onError={(msg) => setErrorMsg(msg)}
+          />
+
+          {/* Link to Register Page */}
+          <div className="pt-1 text-center">
+            <p className="text-xs text-muted-foreground">
+              ยังไม่มีบัญชีผู้ใช้งาน?{" "}
+              <Link
+                href="/register"
+                className="font-bold text-primary hover:underline inline-flex items-center gap-1 ml-1"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                <span>สมัครสมาชิกใหม่ (Register)</span>
+              </Link>
+            </p>
+          </div>
 
           {/* Quick Demo Accounts with Segmented Category Filter & 3D Cards */}
           <div className="pt-3.5 border-t border-border/80 space-y-2.5">
@@ -603,16 +681,24 @@ export default function LoginPage() {
           <span>สำหรับนักเรียนและผู้ปกครองที่ต้องการเช็คสถิติการเข้าแถว</span>
         </div>
         <div>
-          <Link
-            href="/portal"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-black shadow-md shadow-sky-500/20 transition-all group-hover:scale-102 cursor-pointer"
-          >
-            <GraduationCap className="h-4 w-4" />
-            <span>เข้าสู่ระบบเช็คผลด้วยรหัสนักเรียน (Student Portal)</span>
-            <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
-          </Link>
+            <Link
+              href="/portal"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-black shadow-md shadow-sky-500/20 transition-all group-hover:scale-102 cursor-pointer"
+            >
+              <GraduationCap className="h-4 w-4" />
+              <span>เข้าสู่ระบบเช็คผลด้วยรหัสนักเรียน (Student Portal)</span>
+              <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </div>
         </div>
       </div>
-    </div>
+    );
+  }
+
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
+      <LoginPageContent />
+    </React.Suspense>
   );
 }

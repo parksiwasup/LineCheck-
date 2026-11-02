@@ -1,5 +1,6 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@prisma/client";
@@ -25,11 +26,16 @@ const loginSchema = z.object({
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret:
+    process.env.AUTH_SECRET ||
+    "linecheck-plus-super-secret-jwt-key-2026-antigravity",
+  trustHost: true,
   session: {
     strategy: "jwt",
   },
   pages: {
     signIn: "/login",
+    error: "/login",
   },
   providers: [
     Credentials({
@@ -42,12 +48,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
+        const cleanEmail = parsed.data.email.trim().toLowerCase();
         const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
+          where: { email: cleanEmail },
         });
 
         if (!user) return null;
-        if (user.password && user.password !== parsed.data.password) {
+        if (!user.password || user.password !== parsed.data.password) {
           return null;
         }
 
@@ -61,16 +68,76 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         };
       },
     }),
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
+    }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ user, account }) {
+      if (account?.provider === "google") {
+        if (!user.email) return false;
+        const cleanEmail = user.email.trim().toLowerCase();
+        try {
+          let dbUser = await prisma.user.findUnique({
+            where: { email: cleanEmail },
+          });
+
+          if (!dbUser) {
+            // สร้างผู้ใช้ใหม่อัตโนมัติเมื่อล็อกอินผ่าน Google ครั้งแรก
+            dbUser = await prisma.user.create({
+              data: {
+                name: user.name || cleanEmail.split("@")[0],
+                email: cleanEmail,
+                image: user.image || null,
+                role: "TEACHER",
+                classrooms: null,
+              },
+            });
+          } else if (!dbUser.image && user.image) {
+            await prisma.user.update({
+              where: { id: dbUser.id },
+              data: { image: user.image },
+            });
+          }
+
+          user.id = dbUser.id;
+          user.role = dbUser.role;
+          user.classrooms = dbUser.classrooms;
+          return true;
+        } catch (err) {
+          console.error("Google signIn callback error:", err);
+          return false;
+        }
+      }
+      return true;
+    },
+    async jwt({ token, user, account }) {
       if (user) {
+        const cleanEmail = user.email?.trim().toLowerCase() ?? token.email;
         token.id = user.id;
-        token.email = user.email;
+        token.email = cleanEmail;
         token.name = user.name;
         token.role = user.role ?? "TEACHER";
         token.image = user.image ?? null;
         token.classrooms = (user as { classrooms?: string | null }).classrooms ?? null;
+
+        if (account?.provider === "google" && cleanEmail) {
+          try {
+            const dbUser = await prisma.user.findUnique({
+              where: { email: cleanEmail },
+            });
+            if (dbUser) {
+              token.id = dbUser.id;
+              token.name = dbUser.name;
+              token.role = dbUser.role;
+              token.image = dbUser.image ?? user.image ?? null;
+              token.classrooms = dbUser.classrooms ?? null;
+            }
+          } catch (err) {
+            console.error("Google jwt callback DB lookup error:", err);
+          }
+        }
       }
       return token;
     },
